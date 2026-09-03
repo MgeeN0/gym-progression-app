@@ -22,13 +22,21 @@ CREATE TABLE exercise (
   video_link TEXT
 );
 
+CREATE TABLE plan (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_name TEXT NOT NULL,
+  plan_type TEXT NOT NULL
+);
+
 CREATE TABLE activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sets_amount INTEGER NOT NULL,
   reps_amount INTEGER NOT NULL,
   weight REAL NOT NULL,
   exercise_id INTEGER NOT NULL,
-  FOREIGN KEY (exercise_id) REFERENCES exercise (id)
+  plan_id INTEGER NOT NULL,
+  FOREIGN KEY (exercise_id) REFERENCES exercise (id),
+  FOREIGN KEY (plan_id) REFERENCES plan (id)
 );
 `);
     currentDbVersion = 1;
