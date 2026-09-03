@@ -1,34 +1,54 @@
-import { StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSQLiteContext } from 'expo-sqlite';
+
+import { AddPlanCard } from '@/components/add-plan-card';
+import { PlanCard } from '@/components/plan-card';
+import { Colors } from '@/constants/theme';
+import { type Plan } from '@/db/init';
 
 export default function Page() {
+  const db = useSQLiteContext();
+  const [plans, setPlans] = useState<Plan[]>([]);
+
+  useEffect(() => {
+    db.getAllAsync<Plan>('SELECT * FROM plan ORDER BY id').then(setPlans);
+  }, [db]);
+
   return (
-    <View style={styles.container}>
-      <View style={styles.main}>
-        <Text style={styles.title}>Hello World</Text>
-        <Text style={styles.subtitle}>This is the first page of your app.</Text>
-      </View>
-    </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.heading}>Welcome back!</Text>
+      <View style={styles.headingRule} />
+
+      {plans.map((plan) => (
+        <PlanCard key={plan.id} plan={plan} />
+      ))}
+
+      <AddPlanCard />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
-    padding: 24,
+    backgroundColor: Colors.background,
   },
-  main: {
-    flex: 1,
-    justifyContent: "center",
-    maxWidth: 960,
-    marginHorizontal: "auto",
+  content: {
+    padding: 20,
   },
-  title: {
-    fontSize: 64,
-    fontWeight: "bold",
+  heading: {
+    color: Colors.textPrimary,
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 36,
-    color: "#38434D",
+  headingRule: {
+    width: 40,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: Colors.accentStart,
+    marginTop: 10,
+    marginBottom: 24,
   },
 });
