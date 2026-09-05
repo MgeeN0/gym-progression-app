@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { AddPlanCard } from '@/components/add-plan-card';
 import { PlanCard } from '@/components/plan-card';
@@ -11,9 +12,11 @@ export default function Page() {
   const db = useSQLiteContext();
   const [plans, setPlans] = useState<Plan[]>([]);
 
-  useEffect(() => {
-    db.getAllAsync<Plan>('SELECT * FROM plan ORDER BY id').then(setPlans);
-  }, [db]);
+  useFocusEffect(
+    useCallback(() => {
+      db.getAllAsync<Plan>('SELECT * FROM plan ORDER BY id').then(setPlans);
+    }, [db])
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
