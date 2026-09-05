@@ -7,33 +7,37 @@ import { type Plan } from '@/db/init';
 
 export function PlanCard({ plan }: { plan: Plan }) {
   return (
-    <LinearGradient
-      colors={[Colors.accentStart, Colors.accentEnd]}
-      start={[0, 0]}
-      end={[1, 1]}
-      style={styles.outline}
-    >
-      <View style={styles.card}>
-        <View style={styles.imagePlaceholder}>
-          <MaterialCommunityIcons name="image-outline" size={28} color={Colors.textSecondary} />
-        </View>
-        <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>
-            {plan.plan_name}
-          </Text>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeText}>{plan.plan_type}</Text>
+    <View style={styles.shadowWrapper}>
+      <LinearGradient
+        colors={[Colors.accentStart, Colors.accentEnd]}
+        start={[0, 0]}
+        end={[1, 1]}
+        style={styles.outline}
+      >
+        <View style={styles.card}>
+          <View style={styles.imagePlaceholder}>
+            <MaterialCommunityIcons name="image-outline" size={28} color={Colors.textSecondary} />
+          </View>
+          <View style={styles.info}>
+            <Text style={styles.name} numberOfLines={1}>
+              {plan.plan_name}
+            </Text>
+            <View style={styles.typeBadge}>
+              <Text style={styles.typeText}>{plan.plan_type}</Text>
+            </View>
           </View>
         </View>
-      </View>
-    </LinearGradient>
+      </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  outline: {
+  // Shadows must live on a wrapper rather than the LinearGradient itself:
+  // the gradient clips its layer to its rounded bounds on native, which
+  // clips any shadow set on the same view.
+  shadowWrapper: {
     borderRadius: Radii.card,
-    padding: 1.5,
     marginBottom: 16,
     ...Platform.select({
       ios: {
@@ -49,6 +53,10 @@ const styles = StyleSheet.create({
         boxShadow: `0 6px 16px -4px ${Colors.accentStart}66, 6px 6px 14px ${Colors.shadowDark}, -6px -6px 14px ${Colors.shadowLight}`,
       },
     }),
+  },
+  outline: {
+    borderRadius: Radii.card,
+    padding: 1.5,
   },
   card: {
     flexDirection: 'row',

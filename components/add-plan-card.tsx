@@ -7,14 +7,16 @@ import { Colors, Radii } from '@/constants/theme';
 export function AddPlanCard() {
   return (
     <View style={styles.card}>
-      <LinearGradient
-        colors={[Colors.accentStart, Colors.accentEnd]}
-        start={[0, 0]}
-        end={[1, 1]}
-        style={styles.glowBadge}
-      >
-        <MaterialCommunityIcons name="plus" size={22} color={Colors.textPrimary} />
-      </LinearGradient>
+      <View style={styles.glowWrapper}>
+        <LinearGradient
+          colors={[Colors.accentStart, Colors.accentEnd]}
+          start={[0, 0]}
+          end={[1, 1]}
+          style={styles.glowBadge}
+        >
+          <MaterialCommunityIcons name="plus" size={22} color={Colors.textPrimary} />
+        </LinearGradient>
+      </View>
       <Text style={styles.label}>Add new plan</Text>
     </View>
   );
@@ -47,12 +49,11 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  glowBadge: {
-    width: 36,
-    height: 36,
+  // Shadow lives on this wrapper rather than the LinearGradient itself:
+  // the gradient clips its layer to its rounded bounds on native, which
+  // clips any shadow set on the same view.
+  glowWrapper: {
     borderRadius: Radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
     ...Platform.select({
       ios: {
         shadowColor: Colors.accentEnd,
@@ -67,6 +68,13 @@ const styles = StyleSheet.create({
         boxShadow: `0 0 16px 2px ${Colors.accentEnd}99`,
       },
     }),
+  },
+  glowBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: Radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     color: Colors.textSecondary,
