@@ -1,12 +1,15 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Radii } from '@/constants/theme';
 
 export function AddPlanCard() {
+  const router = useRouter();
+
   return (
-    <View style={styles.card}>
+    <Pressable style={styles.card} onPress={() => router.push('/add-plan')}>
       <View style={styles.glowWrapper}>
         <LinearGradient
           colors={[Colors.accentStart, Colors.accentEnd]}
@@ -18,7 +21,7 @@ export function AddPlanCard() {
         </LinearGradient>
       </View>
       <Text style={styles.label}>Add new plan</Text>
-    </View>
+    </Pressable>
   );
 }
 

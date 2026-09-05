@@ -4,9 +4,11 @@ export type Plan = {
   id: number;
   plan_name: string;
   plan_type: string;
+  days_per_plan: number | null;
+  note: string | null;
 };
 
-const CURRENT_DB_VERSION = 4;
+const CURRENT_DB_VERSION = 5;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -61,11 +63,20 @@ ALTER TABLE activity ADD COLUMN plan_id INTEGER REFERENCES plan (id);
   await recordUpgrade(db, 4);
 }
 
+async function upgrade5_addDaysPerPlanAndNoteToPlan(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE plan ADD COLUMN days_per_plan INTEGER;
+ALTER TABLE plan ADD COLUMN note TEXT;
+`);
+  await recordUpgrade(db, 5);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
   { number: 3, run: upgrade3_createPlanTable },
   { number: 4, run: upgrade4_addPlanIdToActivity },
+  { number: 5, run: upgrade5_addDaysPerPlanAndNoteToPlan },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -104,16 +115,28 @@ export async function seedTestDataIfNeeded(db: SQLiteDatabase) {
   }
 
   const testPlans: Omit<Plan, 'id'>[] = [
-    { plan_name: 'Push Pull Legs', plan_type: 'Push Pull Legs' },
-    { plan_name: 'Upper Body Strength', plan_type: 'Upper/Lower' },
-    { plan_name: 'Full Body Conditioning', plan_type: 'Full Body' },
+    { plan_name: 'Push Pull Legs', plan_type: 'Push Pull Legs', days_per_plan: null, note: null },
+    { plan_name: 'Upper Body Strength', plan_type: 'Upper/Lower', days_per_plan: null, note: null },
+    { plan_name: 'Full Body Conditioning', plan_type: 'Full Body', days_per_plan: 3, note: null },
   ];
 
   for (const plan of testPlans) {
     await db.runAsync(
-      'INSERT INTO plan (plan_name, plan_type) VALUES (?, ?)',
+      'INSERT INTO plan (plan_name, plan_type, days_per_plan, note) VALUES (?, ?, ?, ?)',
       plan.plan_name,
-      plan.plan_type
+      plan.plan_type,
+      plan.days_per_plan,
+      plan.note
     );
   }
+}
+
+export async function createPlan(db: SQLiteDatabase, plan: Omit<Plan, 'id'>) {
+  await db.runAsync(
+    'INSERT INTO plan (plan_name, plan_type, days_per_plan, note) VALUES (?, ?, ?, ?)',
+    plan.plan_name,
+    plan.plan_type,
+    plan.days_per_plan,
+    plan.note
+  );
 }
