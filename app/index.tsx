@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 
 import { AddPlanCard } from '@/components/add-plan-card';
 import { PlanCard } from '@/components/plan-card';
