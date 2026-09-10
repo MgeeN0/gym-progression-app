@@ -8,7 +8,7 @@ export type Plan = {
   note: string | null;
 };
 
-const CURRENT_DB_VERSION = 5;
+const CURRENT_DB_VERSION = 7;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -71,12 +71,59 @@ ALTER TABLE plan ADD COLUMN note TEXT;
   await recordUpgrade(db, 5);
 }
 
+async function upgrade6_addActivityStatsAndReviseActivityExercise(db: SQLiteDatabase) {
+  await db.execAsync(`
+CREATE TABLE activity_stats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  activity_id INTEGER NOT NULL,
+  no INTEGER NOT NULL,
+  sets_amount INTEGER NOT NULL,
+  reps_amount INTEGER NOT NULL,
+  weight REAL NOT NULL,
+  date TEXT,
+  FOREIGN KEY (activity_id) REFERENCES activity (id)
+);
+
+INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, date)
+SELECT id, 1, sets_amount, reps_amount, weight, NULL FROM activity;
+
+CREATE TABLE activity_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exercise_id INTEGER,
+  plan_id INTEGER,
+  custom_name TEXT,
+  custom_video_link TEXT,
+  FOREIGN KEY (exercise_id) REFERENCES exercise (id),
+  FOREIGN KEY (plan_id) REFERENCES plan (id)
+);
+
+INSERT INTO activity_new (id, exercise_id, plan_id)
+SELECT id, exercise_id, plan_id FROM activity;
+
+DROP TABLE activity;
+
+ALTER TABLE activity_new RENAME TO activity;
+
+ALTER TABLE exercise ADD COLUMN description TEXT;
+`);
+  await recordUpgrade(db, 6);
+}
+
+async function upgrade7_addImagePathToExercise(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE exercise ADD COLUMN image_path TEXT;
+`);
+  await recordUpgrade(db, 7);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
   { number: 3, run: upgrade3_createPlanTable },
   { number: 4, run: upgrade4_addPlanIdToActivity },
   { number: 5, run: upgrade5_addDaysPerPlanAndNoteToPlan },
+  { number: 6, run: upgrade6_addActivityStatsAndReviseActivityExercise },
+  { number: 7, run: upgrade7_addImagePathToExercise },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
