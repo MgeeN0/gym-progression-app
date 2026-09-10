@@ -8,22 +8,21 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } fr
 
 import { TopBar } from '@/components/top-bar';
 import { Colors, Radii } from '@/constants/theme';
+import { PLAN_TYPES } from '@/constants/plan-types';
 import { createPlan } from '@/db/init';
-
-const FULL_BODY_SPLIT = 'Full Body Workout';
 
 const SPLIT_OPTIONS = [
   {
-    type: FULL_BODY_SPLIT,
+    type: PLAN_TYPES.fullBodyWorkout,
     description: 'Train the whole body in every session using multi-joint exercises',
   },
   {
-    type: 'Push/Pull/Legs',
+    type: PLAN_TYPES.pushPullLegs,
     description:
       'Split your body workouts across three days: pushing movements (e.g., chest), pulling movements (e.g., back, biceps), and legs + abs.',
   },
   {
-    type: 'Single workout (custom)',
+    type: PLAN_TYPES.singleWorkoutCustom,
     description: 'Choose exercises you enjoy, without a template.',
   },
 ] as const;
@@ -48,7 +47,7 @@ export default function AddPlanScreen() {
     await createPlan(db, {
       plan_name: planName.trim(),
       plan_type: selectedSplit,
-      days_per_plan: selectedSplit === FULL_BODY_SPLIT ? daysPerPlan : null,
+      days_per_plan: selectedSplit === PLAN_TYPES.fullBodyWorkout ? daysPerPlan : null,
       note: note.trim().length > 0 ? note.trim() : null,
     });
   }, [db, planName, selectedSplit, daysPerPlan, note]);
@@ -68,7 +67,7 @@ export default function AddPlanScreen() {
     });
   }, [navigation, handleGoBack, handleCreate, canSave]);
 
-  const showDaysPerPlan = useMemo(() => selectedSplit === FULL_BODY_SPLIT, [selectedSplit]);
+  const showDaysPerPlan = useMemo(() => selectedSplit === PLAN_TYPES.fullBodyWorkout, [selectedSplit]);
 
   return (
     <View style={styles.screen}>

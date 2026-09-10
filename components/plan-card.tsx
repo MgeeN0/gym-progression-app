@@ -1,13 +1,25 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { PLAN_TYPES } from '@/constants/plan-types';
 import { Colors, Radii } from '@/constants/theme';
 import { type Plan } from '@/db/init';
 
 export function PlanCard({ plan }: { plan: Plan }) {
+  const router = useRouter();
+
+  const handlePress = () => {
+    if (plan.plan_type === PLAN_TYPES.singleWorkoutCustom) {
+      router.push(`/plan/custom/${plan.id}`);
+    } else {
+      router.push(`/plan/wip/${plan.id}`);
+    }
+  };
+
   return (
-    <View style={styles.shadowWrapper}>
+    <Pressable style={styles.shadowWrapper} onPress={handlePress}>
       <LinearGradient
         colors={[Colors.accentStart, Colors.accentEnd]}
         start={[0, 0]}
@@ -28,7 +40,7 @@ export function PlanCard({ plan }: { plan: Plan }) {
           </View>
         </View>
       </LinearGradient>
-    </View>
+    </Pressable>
   );
 }
 
