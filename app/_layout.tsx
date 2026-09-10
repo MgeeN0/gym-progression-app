@@ -1,5 +1,6 @@
+import { useDrizzleStudio } from 'expo-drizzle-studio-plugin';
 import { Stack } from 'expo-router';
-import { type SQLiteDatabase, SQLiteProvider } from 'expo-sqlite';
+import { type SQLiteDatabase, SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 
 import { TopBar } from '@/components/top-bar';
@@ -11,9 +12,15 @@ async function initializeDatabase(db: SQLiteDatabase) {
   await seedTestDataIfNeeded(db);
 }
 
+function DrizzleStudioDevTools() {
+  useDrizzleStudio(useSQLiteContext());
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <SQLiteProvider databaseName="gym.db" onInit={initializeDatabase}>
+      <DrizzleStudioDevTools />
       <StatusBar style="light" />
       <Stack
         screenOptions={{
