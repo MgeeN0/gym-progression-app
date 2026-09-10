@@ -92,9 +92,11 @@ export default function AddPlanScreen() {
                   <Text style={styles.splitLabel}>{option.type}</Text>
                   <Text style={styles.splitDescription}>{option.description}</Text>
                 </View>
-                {selectedSplit === option.type && (
-                  <MaterialCommunityIcons name="check-circle" size={20} color={Colors.accentStart} />
-                )}
+                <View style={styles.splitCheckSlot}>
+                  {selectedSplit === option.type && (
+                    <MaterialCommunityIcons name="check-circle" size={20} color={Colors.accentStart} />
+                  )}
+                </View>
               </Pressable>
               {index < SPLIT_OPTIONS.length - 1 && <View style={styles.splitDivider} />}
             </View>
@@ -198,6 +200,10 @@ const styles = StyleSheet.create({
   splitBody: {
     flex: 1,
     gap: 4,
+  },
+  splitCheckSlot: {
+    width: 20,
+    alignItems: 'center',
   },
   splitLabel: {
     color: Colors.textPrimary,
