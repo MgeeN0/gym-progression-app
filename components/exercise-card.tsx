@@ -17,6 +17,7 @@ import {
   computeGoal,
   type ExerciseOutcome,
   formatGoalChange,
+  getLessAmounts,
   type ProgressionRules,
 } from '@/lib/progression';
 
@@ -41,12 +42,7 @@ const PICKER_THEMES: Record<PickerKind, PickerTheme> = {
   less: { fill: LESS_COLOR, border: '#B8541F' },
 };
 
-// Amounts are relative to the goal reps. Minus starts at 2 because goal - 1 would usually
-// equal last reps, which is what the X button already records.
-const PICKER_AMOUNTS: Record<PickerKind, number[]> = {
-  more: [1, 2, 3],
-  less: [2, 3, 4],
-};
+const MORE_AMOUNTS = [1, 2, 3];
 
 const BUTTON_SIZE = 44;
 const BUTTON_GAP = 14;
@@ -81,6 +77,7 @@ export function ExerciseCard({
 
   const goal = activity.lastStats ? computeGoal(activity.lastStats, activity) : null;
   const goalChange = goal ? formatGoalChange(goal) : '';
+  const lessAmounts = goal ? getLessAmounts(goal.reps, activity.progressionPace) : [];
   const canRecordOutcome = sessionActive && activity.lastStats !== null && outcome === undefined;
   const openPicker = canRecordOutcome ? picker : null;
   const outcomeColors = outcome ? OUTCOME_COLORS[outcome.kind] : null;
@@ -174,7 +171,7 @@ export function ExerciseCard({
                 <ProgressButton
                   icon="minus"
                   color={LESS_COLOR}
-                  disabled={!canRecordOutcome}
+                  disabled={!canRecordOutcome || lessAmounts.length === 0}
                   active={openPicker === 'less'}
                   onPress={() => togglePicker('less')}
                 />
@@ -251,7 +248,7 @@ export function ExerciseCard({
                     origin={pickerOrigins.less}
                     visible={openPicker === 'less'}
                     theme={PICKER_THEMES.less}
-                    amounts={PICKER_AMOUNTS.less}
+                    amounts={lessAmounts}
                     onSelect={(amount) => record({ kind: 'less', amount })}
                   />
                   <RepPicker
@@ -259,7 +256,7 @@ export function ExerciseCard({
                     origin={pickerOrigins.more}
                     visible={openPicker === 'more'}
                     theme={PICKER_THEMES.more}
-                    amounts={PICKER_AMOUNTS.more}
+                    amounts={MORE_AMOUNTS}
                     onSelect={(amount) => record({ kind: 'more', amount })}
                   />
                 </>
@@ -383,6 +380,9 @@ function RepPicker({
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'box-none' : 'none'}>
       {ARC_ANGLES.map((angle, index) => {
+        if (index >= amounts.length) {
+          return null;
+        }
         const radians = (angle * Math.PI) / 180;
         return (
           <RepBubble

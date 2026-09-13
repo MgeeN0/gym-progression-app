@@ -66,6 +66,18 @@ export function computeRecordedStats(
   }
 }
 
+// The pace is skipped because goal - pace equals last reps, which the X button already records.
+// Amounts larger than the goal reps are dropped since they would go below zero.
+export function getLessAmounts(goalReps: number, progressionPace: number | null, count = 3) {
+  const amounts: number[] = [];
+  for (let amount = 1; amounts.length < count; amount++) {
+    if (amount !== progressionPace) {
+      amounts.push(amount);
+    }
+  }
+  return amounts.filter((amount) => amount <= goalReps);
+}
+
 function signed(value: number) {
   return `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
 }
