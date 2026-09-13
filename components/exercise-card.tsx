@@ -4,17 +4,17 @@ import { useState } from 'react';
 import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Radii } from '@/constants/theme';
+import { computeGoal, formatGoalChange, type ProgressionRules } from '@/lib/progression';
 
 const SUCCESS_COLOR = '#22C55E';
 const DANGER_COLOR = '#FF4D4F';
 
 export type ExerciseOutcome = 'met' | 'missed';
 
-export type ExerciseCardActivity = {
+export type ExerciseCardActivity = ProgressionRules & {
   id: number;
   displayName: string;
   videoUrl: string | null;
-  progressionPace: number | null;
   lastStats: { reps: number; sets: number; weight: number; no: number } | null;
 };
 
@@ -33,7 +33,8 @@ export function ExerciseCard({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  const goalReps = activity.lastStats ? activity.lastStats.reps + (activity.progressionPace ?? 0) : null;
+  const goal = activity.lastStats ? computeGoal(activity.lastStats, activity) : null;
+  const goalChange = goal ? formatGoalChange(goal) : '';
   const canRecordOutcome = sessionActive && activity.lastStats !== null && outcome === undefined;
   const outlineColors: [string, string] =
     outcome === 'met'
@@ -71,22 +72,13 @@ export function ExerciseCard({
           {expanded && (
             <View style={styles.body}>
               <Text style={styles.goalLabel}>
-                {activity.lastStats
-                  ? `Goal${
-                      activity.progressionPace
-                        ? ` (+${activity.progressionPace} rep${activity.progressionPace === 1 ? '' : 's'})`
-                        : ''
-                    }:`
-                  : 'No previous training yet'}
+                {goal ? `Goal${goalChange ? ` (${goalChange})` : ''}:` : 'No previous training yet'}
               </Text>
 
               <View style={styles.statsRow}>
-                <StatPill icon="arm-flex-outline" label={`Reps: ${goalReps ?? '—'}`} />
+                <StatPill icon="arm-flex-outline" label={`Reps: ${goal?.reps ?? '—'}`} />
                 <StatPill icon="repeat" label={`Sets: ${activity.lastStats?.sets ?? '—'}`} />
-                <StatPill
-                  icon="weight-kilogram"
-                  label={activity.lastStats ? `${activity.lastStats.weight} kg` : '—'}
-                />
+                <StatPill icon="weight-kilogram" label={goal ? `${goal.weight} kg` : '—'} />
               </View>
 
               <View style={styles.actionsRow}>

@@ -8,7 +8,7 @@ export type Plan = {
   note: string | null;
 };
 
-const CURRENT_DB_VERSION = 9;
+const CURRENT_DB_VERSION = 10;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -130,6 +130,15 @@ ALTER TABLE activity_stats ADD COLUMN is_confirmed INTEGER NOT NULL DEFAULT 1;
   await recordUpgrade(db, 9);
 }
 
+async function upgrade10_addRepRangeAndWeightStepToActivity(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE activity ADD COLUMN min_reps INTEGER;
+ALTER TABLE activity ADD COLUMN max_reps INTEGER;
+ALTER TABLE activity ADD COLUMN weight_step REAL;
+`);
+  await recordUpgrade(db, 10);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
@@ -140,6 +149,7 @@ const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[]
   { number: 7, run: upgrade7_addImagePathToExercise },
   { number: 8, run: upgrade8_addProgressionPaceToActivity },
   { number: 9, run: upgrade9_addIsConfirmedToActivityStats },
+  { number: 10, run: upgrade10_addRepRangeAndWeightStepToActivity },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {

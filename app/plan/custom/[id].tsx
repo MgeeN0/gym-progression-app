@@ -17,6 +17,7 @@ import {
   discardUnconfirmedActivityStats,
   recordActivityProgress,
 } from '@/db/init';
+import { computeGoal, type ProgressionRules } from '@/lib/progression';
 
 type ActivityRow = {
   id: number;
@@ -24,6 +25,9 @@ type ActivityRow = {
   custom_name: string | null;
   custom_video_link: string | null;
   progression_pace: number | null;
+  min_reps: number | null;
+  max_reps: number | null;
+  weight_step: number | null;
   exercise_name: string | null;
   video_link: string | null;
 };
@@ -43,8 +47,12 @@ function formatElapsed(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function computeRecordedReps(lastStats: LastStats, progressionPace: number | null, outcome: ExerciseOutcome) {
-  return outcome === 'met' ? lastStats.reps + (progressionPace ?? 0) : lastStats.reps;
+function computeRecordedStats(lastStats: LastStats, rules: ProgressionRules, outcome: ExerciseOutcome) {
+  if (outcome === 'missed') {
+    return { reps: lastStats.reps, weight: lastStats.weight };
+  }
+  const goal = computeGoal(lastStats, rules);
+  return { reps: goal.reps, weight: goal.weight };
 }
 
 export default function CustomWorkoutPlanScreen() {
@@ -74,7 +82,8 @@ export default function CustomWorkoutPlanScreen() {
 
     const rows = await db.getAllAsync<ActivityRow>(
       `SELECT activity.id, activity.exercise_id, activity.custom_name, activity.custom_video_link,
-              activity.progression_pace, exercise.exercise_name, exercise.video_link
+              activity.progression_pace, activity.min_reps, activity.max_reps, activity.weight_step,
+              exercise.exercise_name, exercise.video_link
        FROM activity
        LEFT JOIN exercise ON activity.exercise_id = exercise.id
        WHERE activity.plan_id = ?
@@ -94,6 +103,9 @@ export default function CustomWorkoutPlanScreen() {
           displayName: (row.exercise_id != null ? row.exercise_name : row.custom_name) ?? 'Unnamed exercise',
           videoUrl: (row.exercise_id != null ? row.video_link : row.custom_video_link) ?? null,
           progressionPace: row.progression_pace,
+          minReps: row.min_reps,
+          maxReps: row.max_reps,
+          weightStep: row.weight_step,
           lastStats: lastStats
             ? { reps: lastStats.reps_amount, sets: lastStats.sets_amount, weight: lastStats.weight, no: lastStats.no }
             : null,
@@ -148,7 +160,7 @@ export default function CustomWorkoutPlanScreen() {
         activityId: activity.id,
         name: activity.displayName,
         before: { reps, sets, weight },
-        after: { reps: computeRecordedReps(activity.lastStats, activity.progressionPace, outcome), sets, weight },
+        after: { ...computeRecordedStats(activity.lastStats, activity, outcome), sets },
       });
     }
 
@@ -184,12 +196,13 @@ export default function CustomWorkoutPlanScreen() {
         return;
       }
 
+      const recorded = computeRecordedStats(activity.lastStats, activity, outcome);
       await recordActivityProgress(db, {
         activity_id: activityId,
         no: activity.lastStats.no + 1,
         sets_amount: activity.lastStats.sets,
-        reps_amount: computeRecordedReps(activity.lastStats, activity.progressionPace, outcome),
-        weight: activity.lastStats.weight,
+        reps_amount: recorded.reps,
+        weight: recorded.weight,
       });
 
       await Haptics.notificationAsync(
