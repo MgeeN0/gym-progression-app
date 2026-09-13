@@ -42,6 +42,31 @@ export function computeGoal(last: { reps: number; weight: number }, rules: Progr
   return { reps: last.reps + pace, weight: last.weight, repsDelta: pace, weightDelta: 0 };
 }
 
+export type ExerciseOutcome =
+  | { kind: 'met' }
+  | { kind: 'missed' }
+  | { kind: 'more'; amount: number }
+  | { kind: 'less'; amount: number };
+
+export function computeRecordedStats(
+  last: { reps: number; weight: number },
+  rules: ProgressionRules,
+  outcome: ExerciseOutcome
+) {
+  switch (outcome.kind) {
+    case 'met': {
+      const goal = computeGoal(last, rules);
+      return { reps: goal.reps, weight: goal.weight };
+    }
+    case 'missed':
+      return { reps: last.reps, weight: last.weight };
+    case 'more':
+      return { reps: last.reps + outcome.amount, weight: last.weight };
+    case 'less':
+      return { reps: Math.max(0, last.reps - outcome.amount), weight: last.weight };
+  }
+}
+
 function signed(value: number) {
   return `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
 }

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AddExerciseButton } from '@/components/add-exercise-button';
-import { ExerciseCard, type ExerciseCardActivity, type ExerciseOutcome } from '@/components/exercise-card';
+import { ExerciseCard, type ExerciseCardActivity } from '@/components/exercise-card';
 import { TopBar } from '@/components/top-bar';
 import { WorkoutSummaryModal, type WorkoutSummaryEntry } from '@/components/workout-summary-modal';
 import { Colors, Radii } from '@/constants/theme';
@@ -17,7 +17,7 @@ import {
   discardUnconfirmedActivityStats,
   recordActivityProgress,
 } from '@/db/init';
-import { computeGoal, type ProgressionRules } from '@/lib/progression';
+import { computeRecordedStats, type ExerciseOutcome } from '@/lib/progression';
 
 type ActivityRow = {
   id: number;
@@ -39,20 +39,10 @@ type LastStatsRow = {
   no: number;
 };
 
-type LastStats = NonNullable<ExerciseCardActivity['lastStats']>;
-
 function formatElapsed(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function computeRecordedStats(lastStats: LastStats, rules: ProgressionRules, outcome: ExerciseOutcome) {
-  if (outcome === 'missed') {
-    return { reps: lastStats.reps, weight: lastStats.weight };
-  }
-  const goal = computeGoal(lastStats, rules);
-  return { reps: goal.reps, weight: goal.weight };
 }
 
 export default function CustomWorkoutPlanScreen() {
@@ -206,7 +196,11 @@ export default function CustomWorkoutPlanScreen() {
       });
 
       await Haptics.notificationAsync(
-        outcome === 'met' ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error
+        outcome.kind === 'missed'
+          ? Haptics.NotificationFeedbackType.Error
+          : outcome.kind === 'less'
+            ? Haptics.NotificationFeedbackType.Warning
+            : Haptics.NotificationFeedbackType.Success
       );
 
       setRecordedOutcomes((prev) => ({ ...prev, [activityId]: outcome }));

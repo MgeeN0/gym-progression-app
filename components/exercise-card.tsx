@@ -1,15 +1,56 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
-import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  Animated,
+  type LayoutRectangle,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { Colors, Radii } from '@/constants/theme';
-import { computeGoal, formatGoalChange, type ProgressionRules } from '@/lib/progression';
+import {
+  computeGoal,
+  type ExerciseOutcome,
+  formatGoalChange,
+  type ProgressionRules,
+} from '@/lib/progression';
 
 const SUCCESS_COLOR = '#22C55E';
 const DANGER_COLOR = '#FF4D4F';
+const MORE_COLOR = '#2F86FF';
+const LESS_COLOR = '#FF8A3D';
 
-export type ExerciseOutcome = 'met' | 'missed';
+const OUTCOME_COLORS: Record<ExerciseOutcome['kind'], { outline: string; tint: string }> = {
+  met: { outline: SUCCESS_COLOR, tint: `${SUCCESS_COLOR}12` },
+  missed: { outline: DANGER_COLOR, tint: `${DANGER_COLOR}12` },
+  more: { outline: MORE_COLOR, tint: `${MORE_COLOR}16` },
+  less: { outline: DANGER_COLOR, tint: '#FF6A3D16' },
+};
+
+const PICKER_THEMES = {
+  more: { fill: '#19ACE2', border: '#00909A' },
+  less: { fill: LESS_COLOR, border: '#B8541F' },
+};
+
+type PickerKind = 'more' | 'less';
+type PickerTheme = { fill: string; border: string };
+type Point = { x: number; y: number };
+
+const BUTTON_SIZE = 44;
+const BUTTON_GAP = 14;
+const BUTTON_COUNT = 4;
+const BUBBLE_SIZE = 32;
+const ARC_RADIUS = 56;
+const REP_OPTIONS = [
+  { amount: 1, angle: -55 },
+  { amount: 2, angle: 0 },
+  { amount: 3, angle: 55 },
+];
 
 export type ExerciseCardActivity = ProgressionRules & {
   id: number;
@@ -32,18 +73,38 @@ export function ExerciseCard({
   onUndo: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [picker, setPicker] = useState<PickerKind | null>(null);
+  const [actionsLayout, setActionsLayout] = useState<LayoutRectangle | null>(null);
 
   const goal = activity.lastStats ? computeGoal(activity.lastStats, activity) : null;
   const goalChange = goal ? formatGoalChange(goal) : '';
   const canRecordOutcome = sessionActive && activity.lastStats !== null && outcome === undefined;
-  const outlineColors: [string, string] =
-    outcome === 'met'
-      ? [SUCCESS_COLOR, SUCCESS_COLOR]
-      : outcome === 'missed'
-        ? [DANGER_COLOR, DANGER_COLOR]
-        : [Colors.accentStart, Colors.accentEnd];
-  const tintStyle =
-    outcome === 'met' ? styles.tintSuccess : outcome === 'missed' ? styles.tintDanger : null;
+  const openPicker = canRecordOutcome ? picker : null;
+  const outcomeColors = outcome ? OUTCOME_COLORS[outcome.kind] : null;
+  const outlineColors: [string, string] = outcomeColors
+    ? [outcomeColors.outline, outcomeColors.outline]
+    : [Colors.accentStart, Colors.accentEnd];
+
+  // Buttons are fixed-size and centered, so their centers follow from the row's layout.
+  const pickerOrigins: Record<PickerKind, Point> | null = actionsLayout
+    ? (() => {
+        const contentWidth = BUTTON_SIZE * BUTTON_COUNT + BUTTON_GAP * (BUTTON_COUNT - 1);
+        const centerY = actionsLayout.y + actionsLayout.height / 2;
+        return {
+          less: { x: actionsLayout.x + (actionsLayout.width - contentWidth) / 2 + BUTTON_SIZE / 2, y: centerY },
+          more: { x: actionsLayout.x + (actionsLayout.width + contentWidth) / 2 - BUTTON_SIZE / 2, y: centerY },
+        };
+      })()
+    : null;
+
+  const record = (next: ExerciseOutcome) => {
+    setPicker(null);
+    onRecordOutcome(next);
+  };
+
+  const togglePicker = (kind: PickerKind) => {
+    setPicker((current) => (current === kind ? null : kind));
+  };
 
   const handleYoutubePress = () => {
     if (activity.videoUrl) {
@@ -56,8 +117,19 @@ export function ExerciseCard({
       <LinearGradient colors={outlineColors} start={[0, 0]} end={[1, 1]} style={styles.outline}>
         <View style={styles.card}>
           {/* The card must stay opaque: the outline gradient fills the whole card area behind it. */}
-          {tintStyle && <View style={[StyleSheet.absoluteFill, tintStyle]} pointerEvents="none" />}
-          <Pressable style={styles.header} onPress={() => setExpanded((prev) => !prev)}>
+          {outcomeColors && (
+            <View
+              style={[StyleSheet.absoluteFill, { backgroundColor: outcomeColors.tint }]}
+              pointerEvents="none"
+            />
+          )}
+          <Pressable
+            style={styles.header}
+            onPress={() => {
+              setExpanded((prev) => !prev);
+              setPicker(null);
+            }}
+          >
             <View style={styles.imagePlaceholder}>
               <MaterialCommunityIcons name="image-outline" size={26} color={Colors.textSecondary} />
             </View>
@@ -81,21 +153,33 @@ export function ExerciseCard({
                 <StatPill icon="weight-kilogram" label={goal ? `${goal.weight} kg` : '—'} />
               </View>
 
-              <View style={styles.actionsRow}>
-                <ProgressButton icon="minus" color="#FF8A3D" disabled={!sessionActive} />
+              <View style={styles.actionsRow} onLayout={(event) => setActionsLayout(event.nativeEvent.layout)}>
+                <ProgressButton
+                  icon="minus"
+                  color={LESS_COLOR}
+                  disabled={!canRecordOutcome}
+                  active={openPicker === 'less'}
+                  onPress={() => togglePicker('less')}
+                />
                 <ProgressButton
                   icon="close"
                   color={DANGER_COLOR}
                   disabled={!canRecordOutcome}
-                  onPress={() => onRecordOutcome('missed')}
+                  onPress={() => record({ kind: 'missed' })}
                 />
                 <ProgressButton
                   icon="check"
                   color={SUCCESS_COLOR}
                   disabled={!canRecordOutcome}
-                  onPress={() => onRecordOutcome('met')}
+                  onPress={() => record({ kind: 'met' })}
                 />
-                <ProgressButton icon="plus" color="#2F86FF" disabled={!sessionActive} />
+                <ProgressButton
+                  icon="plus"
+                  color={MORE_COLOR}
+                  disabled={!canRecordOutcome}
+                  active={openPicker === 'more'}
+                  onPress={() => togglePicker('more')}
+                />
               </View>
 
               <View style={styles.linksRow}>
@@ -140,6 +224,27 @@ export function ExerciseCard({
                   <MaterialCommunityIcons name="undo-variant" size={20} color={Colors.textSecondary} />
                 </Pressable>
               </View>
+
+              {/* Rendered last and inside the body (not the button) so the bubbles sit on top and stay
+                  within a parent's bounds — touches outside a parent's bounds aren't reliable on Android. */}
+              {pickerOrigins && (
+                <>
+                  <RepPicker
+                    direction={-1}
+                    origin={pickerOrigins.less}
+                    visible={openPicker === 'less'}
+                    theme={PICKER_THEMES.less}
+                    onSelect={(amount) => record({ kind: 'less', amount })}
+                  />
+                  <RepPicker
+                    direction={1}
+                    origin={pickerOrigins.more}
+                    visible={openPicker === 'more'}
+                    theme={PICKER_THEMES.more}
+                    onSelect={(amount) => record({ kind: 'more', amount })}
+                  />
+                </>
+              )}
             </View>
           )}
         </View>
@@ -180,11 +285,13 @@ function ProgressButton({
   icon,
   color,
   disabled,
+  active,
   onPress,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   color: string;
   disabled?: boolean;
+  active?: boolean;
   onPress?: () => void;
 }) {
   const [scale] = useState(() => new Animated.Value(1));
@@ -207,13 +314,123 @@ function ProgressButton({
       ]}
     >
       <Pressable
-        style={[styles.progressButton, { backgroundColor: color }]}
+        style={[styles.progressButton, { backgroundColor: color }, active && styles.progressButtonActive]}
         disabled={disabled}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
       >
         <MaterialCommunityIcons name={icon} size={20} color="#FFFFFF" />
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function RepPicker({
+  direction,
+  origin,
+  visible,
+  theme,
+  onSelect,
+}: {
+  direction: 1 | -1;
+  origin: Point;
+  visible: boolean;
+  theme: PickerTheme;
+  onSelect: (amount: number) => void;
+}) {
+  const [progress] = useState(() => REP_OPTIONS.map(() => new Animated.Value(0)));
+
+  useEffect(() => {
+    const animation = Animated.parallel(
+      progress.map((value, index) =>
+        visible
+          ? Animated.sequence([
+              Animated.delay(index * 55),
+              Animated.spring(value, { toValue: 1, speed: 14, bounciness: 14, useNativeDriver: true }),
+            ])
+          : Animated.timing(value, { toValue: 0, duration: 140, useNativeDriver: true })
+      )
+    );
+    animation.start();
+    // Stopping here prevents a still-pending staggered open from re-opening after a quick close.
+    return () => animation.stop();
+  }, [visible, progress]);
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'box-none' : 'none'}>
+      {REP_OPTIONS.map((option, index) => {
+        const radians = (option.angle * Math.PI) / 180;
+        return (
+          <RepBubble
+            key={option.amount}
+            amount={option.amount}
+            origin={origin}
+            offset={{ x: Math.cos(radians) * ARC_RADIUS * direction, y: Math.sin(radians) * ARC_RADIUS }}
+            spin={direction}
+            progress={progress[index]}
+            theme={theme}
+            onSelect={onSelect}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function RepBubble({
+  amount,
+  origin,
+  offset,
+  spin,
+  progress,
+  theme,
+  onSelect,
+}: {
+  amount: number;
+  origin: Point;
+  offset: Point;
+  spin: 1 | -1;
+  progress: Animated.Value;
+  theme: PickerTheme;
+  onSelect: (amount: number) => void;
+}) {
+  const [pressScale] = useState(() => new Animated.Value(1));
+
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [0, offset.x] });
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [0, offset.y] });
+  const rotate = progress.interpolate({ inputRange: [0, 1], outputRange: [`${-140 * spin}deg`, '0deg'] });
+  const opacity = progress.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 1] });
+  const scale = Animated.multiply(
+    progress.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }),
+    pressScale
+  );
+
+  return (
+    <Animated.View
+      style={[
+        styles.bubbleShadow,
+        progressGlow(theme.fill),
+        {
+          left: origin.x - BUBBLE_SIZE / 2,
+          top: origin.y - BUBBLE_SIZE / 2,
+          opacity,
+          transform: [{ translateX }, { translateY }, { rotate }, { scale }],
+        },
+      ]}
+    >
+      <Pressable
+        style={[styles.bubble, { backgroundColor: theme.fill, borderColor: theme.border }]}
+        hitSlop={4}
+        onPressIn={() =>
+          Animated.spring(pressScale, { toValue: 0.8, speed: 40, bounciness: 6, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(pressScale, { toValue: 1, speed: 30, bounciness: 12, useNativeDriver: true }).start()
+        }
+        onPress={() => onSelect(amount)}
+      >
+        <Text style={styles.bubbleLabel}>{amount}</Text>
       </Pressable>
     </Animated.View>
   );
@@ -244,12 +461,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radii.card - 1.5,
     overflow: 'hidden',
-  },
-  tintSuccess: {
-    backgroundColor: `${SUCCESS_COLOR}12`,
-  },
-  tintDanger: {
-    backgroundColor: `${DANGER_COLOR}12`,
   },
   header: {
     flexDirection: 'row',
@@ -312,7 +523,7 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 14,
+    gap: BUTTON_GAP,
   },
   progressShadow: {
     borderRadius: Radii.pill,
@@ -322,11 +533,34 @@ const styles = StyleSheet.create({
     ...Platform.select({ android: { elevation: 0 } }),
   },
   progressButton: {
-    width: 44,
-    height: 44,
+    width: BUTTON_SIZE,
+    height: BUTTON_SIZE,
     borderRadius: Radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  progressButtonActive: {
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  bubbleShadow: {
+    position: 'absolute',
+    width: BUBBLE_SIZE,
+    height: BUBBLE_SIZE,
+    borderRadius: Radii.pill,
+  },
+  bubble: {
+    width: BUBBLE_SIZE,
+    height: BUBBLE_SIZE,
+    borderRadius: Radii.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bubbleLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   linksRow: {
     flexDirection: 'row',
