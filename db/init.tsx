@@ -8,7 +8,7 @@ export type Plan = {
   note: string | null;
 };
 
-const CURRENT_DB_VERSION = 7;
+const CURRENT_DB_VERSION = 9;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -116,6 +116,20 @@ ALTER TABLE exercise ADD COLUMN image_path TEXT;
   await recordUpgrade(db, 7);
 }
 
+async function upgrade8_addProgressionPaceToActivity(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE activity ADD COLUMN progression_pace INTEGER;
+`);
+  await recordUpgrade(db, 8);
+}
+
+async function upgrade9_addIsConfirmedToActivityStats(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE activity_stats ADD COLUMN is_confirmed INTEGER NOT NULL DEFAULT 1;
+`);
+  await recordUpgrade(db, 9);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
@@ -124,6 +138,8 @@ const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[]
   { number: 5, run: upgrade5_addDaysPerPlanAndNoteToPlan },
   { number: 6, run: upgrade6_addActivityStatsAndReviseActivityExercise },
   { number: 7, run: upgrade7_addImagePathToExercise },
+  { number: 8, run: upgrade8_addProgressionPaceToActivity },
+  { number: 9, run: upgrade9_addIsConfirmedToActivityStats },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -186,4 +202,34 @@ export async function createPlan(db: SQLiteDatabase, plan: Omit<Plan, 'id'>) {
     plan.days_per_plan,
     plan.note
   );
+}
+
+// Draft activity_stats rows (is_confirmed = 0) exist only for the duration of an
+// in-progress training session. Also reused to silently clean up leftover drafts
+// from a session that never finished (e.g. the app crashed mid-workout).
+export async function discardUnconfirmedActivityStats(db: SQLiteDatabase) {
+  await db.runAsync('DELETE FROM activity_stats WHERE is_confirmed = 0');
+}
+
+export async function confirmActivityStats(db: SQLiteDatabase) {
+  await db.runAsync('UPDATE activity_stats SET is_confirmed = 1 WHERE is_confirmed = 0');
+}
+
+export async function recordActivityProgress(
+  db: SQLiteDatabase,
+  entry: { activity_id: number; no: number; sets_amount: number; reps_amount: number; weight: number }
+) {
+  await db.runAsync(
+    'INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, date, is_confirmed) VALUES (?, ?, ?, ?, ?, ?, 0)',
+    entry.activity_id,
+    entry.no,
+    entry.sets_amount,
+    entry.reps_amount,
+    entry.weight,
+    new Date().toISOString()
+  );
+}
+
+export async function deleteDraftActivityStats(db: SQLiteDatabase, activityId: number) {
+  await db.runAsync('DELETE FROM activity_stats WHERE activity_id = ? AND is_confirmed = 0', activityId);
 }

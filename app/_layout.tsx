@@ -5,11 +5,14 @@ import { StatusBar } from 'expo-status-bar';
 
 import { TopBar } from '@/components/top-bar';
 import { Colors } from '@/constants/theme';
-import { migrateDbIfNeeded, seedTestDataIfNeeded } from '@/db/init';
+import { discardUnconfirmedActivityStats, migrateDbIfNeeded, seedTestDataIfNeeded } from '@/db/init';
 
 async function initializeDatabase(db: SQLiteDatabase) {
   await migrateDbIfNeeded(db);
   await seedTestDataIfNeeded(db);
+  // Silently discard any draft activity_stats left over from a workout
+  // session that never finished (e.g. the app crashed mid-training).
+  await discardUnconfirmedActivityStats(db);
 }
 
 function DrizzleStudioDevTools() {
