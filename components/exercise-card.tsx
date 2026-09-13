@@ -32,25 +32,28 @@ const OUTCOME_COLORS: Record<ExerciseOutcome['kind'], { outline: string; tint: s
   less: { outline: DANGER_COLOR, tint: '#FF6A3D16' },
 };
 
-const PICKER_THEMES = {
+type PickerKind = 'more' | 'less';
+type PickerTheme = { fill: string; border: string };
+type Point = { x: number; y: number };
+
+const PICKER_THEMES: Record<PickerKind, PickerTheme> = {
   more: { fill: '#19ACE2', border: '#00909A' },
   less: { fill: LESS_COLOR, border: '#B8541F' },
 };
 
-type PickerKind = 'more' | 'less';
-type PickerTheme = { fill: string; border: string };
-type Point = { x: number; y: number };
+// Amounts are relative to the goal reps. Minus starts at 2 because goal - 1 would usually
+// equal last reps, which is what the X button already records.
+const PICKER_AMOUNTS: Record<PickerKind, number[]> = {
+  more: [1, 2, 3],
+  less: [2, 3, 4],
+};
 
 const BUTTON_SIZE = 44;
 const BUTTON_GAP = 14;
 const BUTTON_COUNT = 4;
 const BUBBLE_SIZE = 32;
 const ARC_RADIUS = 56;
-const REP_OPTIONS = [
-  { amount: 1, angle: -55 },
-  { amount: 2, angle: 0 },
-  { amount: 3, angle: 55 },
-];
+const ARC_ANGLES = [-55, 0, 55];
 
 export type ExerciseCardActivity = ProgressionRules & {
   id: number;
@@ -84,6 +87,20 @@ export function ExerciseCard({
   const outlineColors: [string, string] = outcomeColors
     ? [outcomeColors.outline, outcomeColors.outline]
     : [Colors.accentStart, Colors.accentEnd];
+
+  let repsLabel = 'Reps: —';
+  let repsAccent: string | undefined;
+  if (goal) {
+    if (outcome?.kind === 'more') {
+      repsLabel = `Reps: ${goal.reps} + ${outcome.amount}`;
+      repsAccent = MORE_COLOR;
+    } else if (outcome?.kind === 'less') {
+      repsLabel = `Reps: ${goal.reps} - ${outcome.amount}`;
+      repsAccent = LESS_COLOR;
+    } else {
+      repsLabel = `Reps: ${goal.reps}`;
+    }
+  }
 
   // Buttons are fixed-size and centered, so their centers follow from the row's layout.
   const pickerOrigins: Record<PickerKind, Point> | null = actionsLayout
@@ -148,7 +165,7 @@ export function ExerciseCard({
               </Text>
 
               <View style={styles.statsRow}>
-                <StatPill icon="arm-flex-outline" label={`Reps: ${goal?.reps ?? '—'}`} />
+                <StatPill icon="arm-flex-outline" label={repsLabel} accent={repsAccent} />
                 <StatPill icon="repeat" label={`Sets: ${activity.lastStats?.sets ?? '—'}`} />
                 <StatPill icon="weight-kilogram" label={goal ? `${goal.weight} kg` : '—'} />
               </View>
@@ -234,6 +251,7 @@ export function ExerciseCard({
                     origin={pickerOrigins.less}
                     visible={openPicker === 'less'}
                     theme={PICKER_THEMES.less}
+                    amounts={PICKER_AMOUNTS.less}
                     onSelect={(amount) => record({ kind: 'less', amount })}
                   />
                   <RepPicker
@@ -241,6 +259,7 @@ export function ExerciseCard({
                     origin={pickerOrigins.more}
                     visible={openPicker === 'more'}
                     theme={PICKER_THEMES.more}
+                    amounts={PICKER_AMOUNTS.more}
                     onSelect={(amount) => record({ kind: 'more', amount })}
                   />
                 </>
@@ -256,13 +275,15 @@ export function ExerciseCard({
 function StatPill({
   icon,
   label,
+  accent,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   label: string;
+  accent?: string;
 }) {
   return (
-    <View style={styles.statPill}>
-      <MaterialCommunityIcons name={icon} size={14} color={Colors.accentEnd} />
+    <View style={[styles.statPill, accent !== undefined && { borderColor: accent, borderWidth: 1.5 }]}>
+      <MaterialCommunityIcons name={icon} size={14} color={accent ?? Colors.accentEnd} />
       <Text style={styles.statPillLabel}>{label}</Text>
     </View>
   );
@@ -331,15 +352,17 @@ function RepPicker({
   origin,
   visible,
   theme,
+  amounts,
   onSelect,
 }: {
   direction: 1 | -1;
   origin: Point;
   visible: boolean;
   theme: PickerTheme;
+  amounts: number[];
   onSelect: (amount: number) => void;
 }) {
-  const [progress] = useState(() => REP_OPTIONS.map(() => new Animated.Value(0)));
+  const [progress] = useState(() => ARC_ANGLES.map(() => new Animated.Value(0)));
 
   useEffect(() => {
     const animation = Animated.parallel(
@@ -359,12 +382,12 @@ function RepPicker({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'box-none' : 'none'}>
-      {REP_OPTIONS.map((option, index) => {
-        const radians = (option.angle * Math.PI) / 180;
+      {ARC_ANGLES.map((angle, index) => {
+        const radians = (angle * Math.PI) / 180;
         return (
           <RepBubble
-            key={option.amount}
-            amount={option.amount}
+            key={angle}
+            amount={amounts[index]}
             origin={origin}
             offset={{ x: Math.cos(radians) * ARC_RADIUS * direction, y: Math.sin(radians) * ARC_RADIUS }}
             spin={direction}

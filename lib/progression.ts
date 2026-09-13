@@ -53,17 +53,16 @@ export function computeRecordedStats(
   rules: ProgressionRules,
   outcome: ExerciseOutcome
 ) {
+  const goal = computeGoal(last, rules);
   switch (outcome.kind) {
-    case 'met': {
-      const goal = computeGoal(last, rules);
+    case 'met':
       return { reps: goal.reps, weight: goal.weight };
-    }
     case 'missed':
       return { reps: last.reps, weight: last.weight };
     case 'more':
-      return { reps: last.reps + outcome.amount, weight: last.weight };
+      return { reps: goal.reps + outcome.amount, weight: goal.weight };
     case 'less':
-      return { reps: Math.max(0, last.reps - outcome.amount), weight: last.weight };
+      return { reps: Math.max(0, goal.reps - outcome.amount), weight: goal.weight };
   }
 }
 
