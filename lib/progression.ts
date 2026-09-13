@@ -78,6 +78,32 @@ export function getLessAmounts(goalReps: number, progressionPace: number | null,
   return amounts.filter((amount) => amount <= goalReps);
 }
 
+function sameWeight(a: number, b: number) {
+  return Math.abs(a - b) < 1e-6;
+}
+
+// Drafts don't store which button produced them. Every button records a distinct row
+// (see getLessAmounts), so the outcome can be recovered from the recorded reps and weight.
+export function inferOutcome(
+  last: { reps: number; weight: number },
+  rules: ProgressionRules,
+  recorded: { reps: number; weight: number }
+): ExerciseOutcome {
+  const goal = computeGoal(last, rules);
+  if (!sameWeight(recorded.weight, goal.weight)) {
+    return { kind: 'missed' };
+  }
+  if (recorded.reps === goal.reps) {
+    return { kind: 'met' };
+  }
+  if (sameWeight(recorded.weight, last.weight) && recorded.reps === last.reps) {
+    return { kind: 'missed' };
+  }
+  return recorded.reps > goal.reps
+    ? { kind: 'more', amount: recorded.reps - goal.reps }
+    : { kind: 'less', amount: goal.reps - recorded.reps };
+}
+
 function signed(value: number) {
   return `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
 }

@@ -8,7 +8,7 @@ export type Plan = {
   note: string | null;
 };
 
-const CURRENT_DB_VERSION = 10;
+const CURRENT_DB_VERSION = 11;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -139,6 +139,19 @@ ALTER TABLE activity ADD COLUMN weight_step REAL;
   await recordUpgrade(db, 10);
 }
 
+async function upgrade11_createWorkoutHistoryTable(db: SQLiteDatabase) {
+  await db.execAsync(`
+CREATE TABLE workout_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL,
+  start_timestamp TEXT NOT NULL,
+  workout_time INTEGER,
+  FOREIGN KEY (plan_id) REFERENCES plan (id)
+);
+`);
+  await recordUpgrade(db, 11);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
@@ -150,6 +163,7 @@ const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[]
   { number: 8, run: upgrade8_addProgressionPaceToActivity },
   { number: 9, run: upgrade9_addIsConfirmedToActivityStats },
   { number: 10, run: upgrade10_addRepRangeAndWeightStepToActivity },
+  { number: 11, run: upgrade11_createWorkoutHistoryTable },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -214,15 +228,78 @@ export async function createPlan(db: SQLiteDatabase, plan: Omit<Plan, 'id'>) {
   );
 }
 
-// Draft activity_stats rows (is_confirmed = 0) exist only for the duration of an
-// in-progress training session. Also reused to silently clean up leftover drafts
-// from a session that never finished (e.g. the app crashed mid-workout).
-export async function discardUnconfirmedActivityStats(db: SQLiteDatabase) {
-  await db.runAsync('DELETE FROM activity_stats WHERE is_confirmed = 0');
+// While a workout is in progress it exists as one unfinished workout_history row
+// (workout_time IS NULL) plus draft activity_stats rows (is_confirmed = 0).
+
+export async function startWorkout(db: SQLiteDatabase, planId: number) {
+  const startTimestamp = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString().replace('.000Z', 'Z');
+  const result = await db.runAsync(
+    'INSERT INTO workout_history (plan_id, start_timestamp) VALUES (?, ?)',
+    planId,
+    startTimestamp
+  );
+  return { id: result.lastInsertRowId, startTimestamp };
 }
 
-export async function confirmActivityStats(db: SQLiteDatabase) {
-  await db.runAsync('UPDATE activity_stats SET is_confirmed = 1 WHERE is_confirmed = 0');
+export async function getActiveWorkout(db: SQLiteDatabase) {
+  return db.getFirstAsync<{ id: number; plan_id: number; plan_name: string; start_timestamp: string }>(
+    `SELECT workout_history.id, workout_history.plan_id, plan.plan_name, workout_history.start_timestamp
+     FROM workout_history
+     JOIN plan ON plan.id = workout_history.plan_id
+     WHERE workout_history.workout_time IS NULL
+     ORDER BY workout_history.id DESC
+     LIMIT 1`
+  );
+}
+
+export async function finishWorkout(db: SQLiteDatabase, workoutId: number, workoutTime: number) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('UPDATE activity_stats SET is_confirmed = 1 WHERE is_confirmed = 0');
+    await db.runAsync('UPDATE workout_history SET workout_time = ? WHERE id = ?', workoutTime, workoutId);
+  });
+}
+
+export async function discardUnfinishedWorkout(db: SQLiteDatabase) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM activity_stats WHERE is_confirmed = 0');
+    await db.runAsync('DELETE FROM workout_history WHERE workout_time IS NULL');
+  });
+}
+
+export type UnfinishedWorkout =
+  | { status: 'none' }
+  | { status: 'open'; planId: number; hasDrafts: boolean }
+  | { status: 'corrupted' };
+
+export async function inspectUnfinishedWorkout(db: SQLiteDatabase): Promise<UnfinishedWorkout> {
+  const openWorkouts = await db.getAllAsync<{ plan_id: number; existing_plan_id: number | null }>(
+    `SELECT workout_history.plan_id, plan.id AS existing_plan_id
+     FROM workout_history
+     LEFT JOIN plan ON plan.id = workout_history.plan_id
+     WHERE workout_history.workout_time IS NULL`
+  );
+  const draftPlans = await db.getAllAsync<{ plan_id: number | null }>(
+    `SELECT DISTINCT plan.id AS plan_id
+     FROM activity_stats
+     LEFT JOIN activity ON activity_stats.activity_id = activity.id
+     LEFT JOIN plan ON activity.plan_id = plan.id
+     WHERE activity_stats.is_confirmed = 0`
+  );
+
+  if (openWorkouts.length === 0 && draftPlans.length === 0) {
+    return { status: 'none' };
+  }
+
+  // Valid only as one unfinished workout for an existing plan, with every draft belonging to that plan.
+  const [workout] = openWorkouts;
+  if (
+    openWorkouts.length !== 1 ||
+    workout.existing_plan_id === null ||
+    draftPlans.some((row) => row.plan_id !== workout.plan_id)
+  ) {
+    return { status: 'corrupted' };
+  }
+  return { status: 'open', planId: workout.plan_id, hasDrafts: draftPlans.length > 0 };
 }
 
 export async function recordActivityProgress(

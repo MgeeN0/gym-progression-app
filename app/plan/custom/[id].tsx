@@ -1,23 +1,23 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
+import { useActiveWorkout } from '@/components/active-workout-provider';
 import { AddExerciseButton } from '@/components/add-exercise-button';
 import { ExerciseCard, type ExerciseCardActivity } from '@/components/exercise-card';
 import { TopBar } from '@/components/top-bar';
 import { WorkoutSummaryModal, type WorkoutSummaryEntry } from '@/components/workout-summary-modal';
-import { Colors, Radii } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import {
-  confirmActivityStats,
   deleteDraftActivityStats,
-  discardUnconfirmedActivityStats,
+  discardUnfinishedWorkout,
+  finishWorkout,
   recordActivityProgress,
 } from '@/db/init';
-import { computeRecordedStats, type ExerciseOutcome } from '@/lib/progression';
+import { computeRecordedStats, type ExerciseOutcome, inferOutcome } from '@/lib/progression';
+import { formatElapsed, secondsSince } from '@/lib/time';
 
 type ActivityRow = {
   id: number;
@@ -39,11 +39,11 @@ type LastStatsRow = {
   no: number;
 };
 
-function formatElapsed(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
+type DraftRow = {
+  activity_id: number;
+  reps_amount: number;
+  weight: number;
+};
 
 export default function CustomWorkoutPlanScreen() {
   const router = useRouter();
@@ -51,16 +51,15 @@ export default function CustomWorkoutPlanScreen() {
   const db = useSQLiteContext();
   const { id } = useLocalSearchParams<{ id: string }>();
   const planId = Number(id);
+  const { activeWorkout, refreshActiveWorkout, requestStart } = useActiveWorkout();
 
   const [planName, setPlanName] = useState('');
   const [activities, setActivities] = useState<ExerciseCardActivity[]>([]);
-
-  const [sessionActive, setSessionActive] = useState(false);
-  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [recordedOutcomes, setRecordedOutcomes] = useState<Record<number, ExerciseOutcome>>({});
   const [summaryEntries, setSummaryEntries] = useState<WorkoutSummaryEntry[] | null>(null);
   const [summaryDuration, setSummaryDuration] = useState('');
+
+  const sessionActive = activeWorkout?.planId === planId;
 
   const handleGoBack = useCallback(() => {
     router.back();
@@ -104,6 +103,22 @@ export default function CustomWorkoutPlanScreen() {
     );
 
     setActivities(withStats);
+
+    // Rebuild card states from any drafts of this plan's activities (e.g. a restored session).
+    const drafts = await db.getAllAsync<DraftRow>(
+      'SELECT activity_id, reps_amount, weight FROM activity_stats WHERE is_confirmed = 0'
+    );
+    const outcomes: Record<number, ExerciseOutcome> = {};
+    for (const draft of drafts) {
+      const activity = withStats.find((item) => item.id === draft.activity_id);
+      if (activity?.lastStats) {
+        outcomes[activity.id] = inferOutcome(activity.lastStats, activity, {
+          reps: draft.reps_amount,
+          weight: draft.weight,
+        });
+      }
+    }
+    setRecordedOutcomes(outcomes);
   }, [db, planId]);
 
   useFocusEffect(
@@ -112,32 +127,16 @@ export default function CustomWorkoutPlanScreen() {
     }, [loadActivities])
   );
 
-  useEffect(() => {
-    if (!sessionActive || sessionStartedAt === null) {
-      return;
-    }
-    const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - sessionStartedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [sessionActive, sessionStartedAt]);
-
-  const resetSession = useCallback(() => {
-    setSessionActive(false);
-    setSessionStartedAt(null);
-    setRecordedOutcomes({});
-  }, []);
-
   const handleStart = useCallback(() => {
-    setSessionActive(true);
-    setSessionStartedAt(Date.now());
-    setElapsedSeconds(0);
-    setRecordedOutcomes({});
-  }, []);
+    requestStart(planId);
+  }, [requestStart, planId]);
 
   const handleFinish = useCallback(async () => {
-    const durationSeconds = sessionStartedAt === null ? 0 : Math.floor((Date.now() - sessionStartedAt) / 1000);
-    await confirmActivityStats(db);
+    if (!activeWorkout || activeWorkout.planId !== planId) {
+      return;
+    }
+    const durationSeconds = secondsSince(activeWorkout.startedAt);
+    await finishWorkout(db, activeWorkout.id, durationSeconds);
 
     const entries: WorkoutSummaryEntry[] = [];
     for (const activity of activities) {
@@ -154,10 +153,11 @@ export default function CustomWorkoutPlanScreen() {
       });
     }
 
-    resetSession();
+    setRecordedOutcomes({});
     setSummaryDuration(formatElapsed(durationSeconds));
     setSummaryEntries(entries);
-  }, [db, sessionStartedAt, activities, recordedOutcomes, resetSession]);
+    await refreshActiveWorkout();
+  }, [db, planId, activeWorkout, activities, recordedOutcomes, refreshActiveWorkout]);
 
   const handleSummaryConfirm = useCallback(() => {
     setSummaryEntries(null);
@@ -171,13 +171,14 @@ export default function CustomWorkoutPlanScreen() {
         text: 'Discard',
         style: 'destructive',
         onPress: async () => {
-          await discardUnconfirmedActivityStats(db);
-          resetSession();
+          await discardUnfinishedWorkout(db);
+          setRecordedOutcomes({});
+          await refreshActiveWorkout();
           router.dismissTo('/');
         },
       },
     ]);
-  }, [db, resetSession, router]);
+  }, [db, refreshActiveWorkout, router]);
 
   const handleRecordOutcome = useCallback(
     async (activityId: number, outcome: ExerciseOutcome) => {
@@ -254,22 +255,6 @@ export default function CustomWorkoutPlanScreen() {
         ))}
       </ScrollView>
 
-      {sessionActive && (
-        <View style={styles.timerWrapper} pointerEvents="none">
-          <View style={styles.timerShadow}>
-            <LinearGradient
-              colors={[Colors.accentStart, Colors.accentEnd]}
-              start={[0, 0]}
-              end={[1, 0]}
-              style={styles.timerBadge}
-            >
-              <MaterialCommunityIcons name="timer-outline" size={16} color={Colors.textPrimary} />
-              <Text style={styles.timerText}>{formatElapsed(elapsedSeconds)}</Text>
-            </LinearGradient>
-          </View>
-        </View>
-      )}
-
       <WorkoutSummaryModal
         visible={summaryEntries !== null}
         duration={summaryDuration}
@@ -287,38 +272,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-  },
-  timerWrapper: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 24,
-    alignItems: 'center',
-  },
-  timerShadow: {
-    borderRadius: Radii.pill,
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.accentStart,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.45,
-        shadowRadius: 14,
-      },
-      android: { elevation: 8 },
-      web: { boxShadow: `0 6px 18px -2px ${Colors.accentStart}80` },
-    }),
-  },
-  timerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: Radii.pill,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-  },
-  timerText: {
-    color: Colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
+    // Leaves room for the floating workout timer.
+    paddingBottom: 100,
   },
 });

@@ -39,6 +39,8 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
+    // Leaves room for the floating workout timer.
+    paddingBottom: 100,
   },
   heading: {
     color: Colors.textPrimary,
