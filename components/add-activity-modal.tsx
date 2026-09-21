@@ -4,6 +4,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { KeyboardDoneBar } from '@/components/keyboard-done-bar';
 import { RangeSlider } from '@/components/range-slider';
 import { Colors, Radii } from '@/constants/theme';
 import { createActivity } from '@/db/init';
@@ -323,6 +324,7 @@ export function AddActivityModal({
             </View>
           </LinearGradient>
         </Pressable>
+        <KeyboardDoneBar />
       </Pressable>
     </Modal>
   );
