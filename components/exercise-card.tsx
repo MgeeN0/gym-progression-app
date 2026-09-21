@@ -18,6 +18,7 @@ import {
   type ExerciseOutcome,
   formatGoalChange,
   getLessAmounts,
+  type ProgressionMode,
   type ProgressionRules,
 } from '@/lib/progression';
 
@@ -55,7 +56,9 @@ export type ExerciseCardActivity = ProgressionRules & {
   id: number;
   displayName: string;
   videoUrl: string | null;
-  lastStats: { reps: number; sets: number; weight: number; no: number } | null;
+  mode: ProgressionMode;
+  // amount/load are reps/weight in weight mode and seconds/sets in time mode.
+  lastStats: { amount: number; load: number; sets: number; no: number } | null;
 };
 
 export function ExerciseCard({
@@ -75,9 +78,10 @@ export function ExerciseCard({
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const [actionsLayout, setActionsLayout] = useState<LayoutRectangle | null>(null);
 
-  const goal = activity.lastStats ? computeGoal(activity.lastStats, activity) : null;
-  const goalChange = goal ? formatGoalChange(goal) : '';
-  const lessAmounts = goal ? getLessAmounts(goal.reps, activity.progressionPace) : [];
+  const isTime = activity.mode === 'time';
+  const goal = activity.lastStats ? computeGoal(activity.mode, activity.lastStats, activity) : null;
+  const goalChange = goal ? formatGoalChange(activity.mode, goal) : '';
+  const lessAmounts = goal ? getLessAmounts(goal.amount, goal.amountDelta) : [];
   const canRecordOutcome = sessionActive && activity.lastStats !== null && outcome === undefined;
   const openPicker = canRecordOutcome ? picker : null;
   const outcomeColors = outcome ? OUTCOME_COLORS[outcome.kind] : null;
@@ -85,19 +89,23 @@ export function ExerciseCard({
     ? [outcomeColors.outline, outcomeColors.outline]
     : [Colors.accentStart, Colors.accentEnd];
 
-  let repsLabel = 'Reps: —';
-  let repsAccent: string | undefined;
+  const amountName = isTime ? 'Time' : 'Reps';
+  const amountUnit = isTime ? ' s' : '';
+  let amountLabel = `${amountName}: —`;
+  let amountAccent: string | undefined;
   if (goal) {
     if (outcome?.kind === 'more') {
-      repsLabel = `Reps: ${goal.reps} + ${outcome.amount}`;
-      repsAccent = MORE_COLOR;
+      amountLabel = `${amountName}: ${goal.amount} + ${outcome.amount}${amountUnit}`;
+      amountAccent = MORE_COLOR;
     } else if (outcome?.kind === 'less') {
-      repsLabel = `Reps: ${goal.reps} - ${outcome.amount}`;
-      repsAccent = LESS_COLOR;
+      amountLabel = `${amountName}: ${goal.amount} - ${outcome.amount}${amountUnit}`;
+      amountAccent = LESS_COLOR;
     } else {
-      repsLabel = `Reps: ${goal.reps}`;
+      amountLabel = `${amountName}: ${goal.amount}${amountUnit}`;
     }
   }
+  // In time mode the sets are the load, so the goal can change them.
+  const setsValue = goal ? (isTime ? goal.load : activity.lastStats?.sets) : undefined;
 
   // Buttons are fixed-size and centered, so their centers follow from the row's layout.
   const pickerOrigins: Record<PickerKind, Point> | null = actionsLayout
@@ -162,9 +170,13 @@ export function ExerciseCard({
               </Text>
 
               <View style={styles.statsRow}>
-                <StatPill icon="arm-flex-outline" label={repsLabel} accent={repsAccent} />
-                <StatPill icon="repeat" label={`Sets: ${activity.lastStats?.sets ?? '—'}`} />
-                <StatPill icon="weight-kilogram" label={goal ? `${goal.weight} kg` : '—'} />
+                <StatPill
+                  icon={isTime ? 'timer-outline' : 'arm-flex-outline'}
+                  label={amountLabel}
+                  accent={amountAccent}
+                />
+                <StatPill icon="repeat" label={`Sets: ${setsValue ?? '—'}`} />
+                {!isTime && <StatPill icon="weight-kilogram" label={goal ? `${goal.load} kg` : '—'} />}
               </View>
 
               <View style={styles.actionsRow} onLayout={(event) => setActionsLayout(event.nativeEvent.layout)}>

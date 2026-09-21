@@ -4,7 +4,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Radii } from '@/constants/theme';
 
-export function AddExerciseButton() {
+export function AddExerciseButton({ onPress }: { onPress?: () => void }) {
   return (
     <View style={styles.shadowWrapper}>
       <LinearGradient
@@ -13,7 +13,7 @@ export function AddExerciseButton() {
         end={[1, 1]}
         style={styles.outline}
       >
-        <Pressable style={({ pressed }) => [styles.inner, pressed && styles.innerPressed]}>
+        <Pressable style={({ pressed }) => [styles.inner, pressed && styles.innerPressed]} onPress={onPress}>
           <LinearGradient
             colors={[`${Colors.accentStart}33`, `${Colors.accentEnd}14`]}
             start={[0, 0]}

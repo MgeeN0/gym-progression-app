@@ -8,7 +8,7 @@ export type Plan = {
   note: string | null;
 };
 
-const CURRENT_DB_VERSION = 11;
+const CURRENT_DB_VERSION = 15;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -152,6 +152,75 @@ CREATE TABLE workout_history (
   await recordUpgrade(db, 11);
 }
 
+async function upgrade12_addCustomTypeToActivity(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE activity ADD COLUMN custom_type TEXT;
+`);
+  await recordUpgrade(db, 12);
+}
+
+async function upgrade13_addTimeToActivityStats(db: SQLiteDatabase) {
+  // Time activities have no reps or weight, so those columns lose NOT NULL.
+  // SQLite can't drop a constraint in place, so the table is rebuilt.
+  await db.execAsync(`
+CREATE TABLE activity_stats_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  activity_id INTEGER NOT NULL,
+  no INTEGER NOT NULL,
+  sets_amount INTEGER NOT NULL,
+  reps_amount INTEGER,
+  weight REAL,
+  time REAL,
+  date TEXT,
+  is_confirmed INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (activity_id) REFERENCES activity (id)
+);
+
+INSERT INTO activity_stats_new (id, activity_id, no, sets_amount, reps_amount, weight, date, is_confirmed)
+SELECT id, activity_id, no, sets_amount, reps_amount, weight, date, is_confirmed FROM activity_stats;
+
+DROP TABLE activity_stats;
+
+ALTER TABLE activity_stats_new RENAME TO activity_stats;
+`);
+  await recordUpgrade(db, 13);
+}
+
+async function upgrade14_addOutcomeToActivityStats(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE activity_stats ADD COLUMN outcome TEXT;
+`);
+  await recordUpgrade(db, 14);
+}
+
+async function upgrade15_makeProgressionPaceReal(db: SQLiteDatabase) {
+  // A pace of 0.5 is fractional, so the column is rebuilt with REAL affinity.
+  await db.execAsync(`
+CREATE TABLE activity_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exercise_id INTEGER,
+  plan_id INTEGER,
+  custom_name TEXT,
+  custom_video_link TEXT,
+  progression_pace REAL,
+  min_reps INTEGER,
+  max_reps INTEGER,
+  weight_step REAL,
+  custom_type TEXT,
+  FOREIGN KEY (exercise_id) REFERENCES exercise (id),
+  FOREIGN KEY (plan_id) REFERENCES plan (id)
+);
+
+INSERT INTO activity_new (id, exercise_id, plan_id, custom_name, custom_video_link, progression_pace, min_reps, max_reps, weight_step, custom_type)
+SELECT id, exercise_id, plan_id, custom_name, custom_video_link, progression_pace, min_reps, max_reps, weight_step, custom_type FROM activity;
+
+DROP TABLE activity;
+
+ALTER TABLE activity_new RENAME TO activity;
+`);
+  await recordUpgrade(db, 15);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
@@ -164,6 +233,10 @@ const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[]
   { number: 9, run: upgrade9_addIsConfirmedToActivityStats },
   { number: 10, run: upgrade10_addRepRangeAndWeightStepToActivity },
   { number: 11, run: upgrade11_createWorkoutHistoryTable },
+  { number: 12, run: upgrade12_addCustomTypeToActivity },
+  { number: 13, run: upgrade13_addTimeToActivityStats },
+  { number: 14, run: upgrade14_addOutcomeToActivityStats },
+  { number: 15, run: upgrade15_makeProgressionPaceReal },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -304,17 +377,71 @@ export async function inspectUnfinishedWorkout(db: SQLiteDatabase): Promise<Unfi
 
 export async function recordActivityProgress(
   db: SQLiteDatabase,
-  entry: { activity_id: number; no: number; sets_amount: number; reps_amount: number; weight: number }
+  entry: {
+    activity_id: number;
+    no: number;
+    sets_amount: number;
+    reps_amount: number | null;
+    weight: number | null;
+    time: number | null;
+    outcome: 'met' | 'missed' | 'more' | 'less';
+  }
 ) {
   await db.runAsync(
-    'INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, date, is_confirmed) VALUES (?, ?, ?, ?, ?, ?, 0)',
+    `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, outcome)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
     entry.activity_id,
     entry.no,
     entry.sets_amount,
     entry.reps_amount,
     entry.weight,
-    new Date().toISOString()
+    entry.time,
+    new Date().toISOString(),
+    entry.outcome
   );
+}
+
+export async function createActivity(
+  db: SQLiteDatabase,
+  input: {
+    planId: number;
+    customName: string;
+    customVideoLink: string | null;
+    customType: 'weight' | 'time';
+    minReps: number | null;
+    maxReps: number | null;
+    weightStep: number | null;
+    progressionPace: number | null;
+    start: { sets: number; reps: number | null; weight: number | null; time: number | null };
+  }
+) {
+  await db.withTransactionAsync(async () => {
+    const activity = await db.runAsync(
+      `INSERT INTO activity
+         (exercise_id, plan_id, custom_name, custom_video_link, custom_type, progression_pace, min_reps, max_reps, weight_step)
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      input.planId,
+      input.customName,
+      input.customVideoLink,
+      input.customType,
+      input.progressionPace,
+      input.minReps,
+      input.maxReps,
+      input.weightStep
+    );
+
+    // The starting point is confirmed history, not a draft, so the first goal can build on it.
+    await db.runAsync(
+      `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed)
+       VALUES (?, 1, ?, ?, ?, ?, ?, 1)`,
+      activity.lastInsertRowId,
+      input.start.sets,
+      input.start.reps,
+      input.start.weight,
+      input.start.time,
+      new Date().toISOString()
+    );
+  });
 }
 
 export async function deleteDraftActivityStats(db: SQLiteDatabase, activityId: number) {

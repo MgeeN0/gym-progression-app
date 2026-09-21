@@ -4,18 +4,12 @@ import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 
 import { Colors, Radii } from '@/constants/theme';
 
-type Stats = { reps: number; sets: number; weight: number };
-
 export type WorkoutSummaryEntry = {
   activityId: number;
   name: string;
-  before: Stats;
-  after: Stats;
+  before: string;
+  after: string;
 };
-
-function formatStats(stats: Stats) {
-  return `${stats.reps} reps, ${stats.sets} sets, ${stats.weight} kg`;
-}
 
 export function WorkoutSummaryModal({
   visible,
@@ -54,9 +48,9 @@ export function WorkoutSummaryModal({
                     <View key={entry.activityId} style={styles.row}>
                       <Text style={styles.rowText}>
                         <Text style={styles.rowName}>{entry.name}: </Text>
-                        {formatStats(entry.before)}
+                        {entry.before}
                         <Text style={styles.arrow}> → </Text>
-                        <Text style={styles.rowAfter}>{formatStats(entry.after)}</Text>
+                        <Text style={styles.rowAfter}>{entry.after}</Text>
                       </Text>
                     </View>
                   ))

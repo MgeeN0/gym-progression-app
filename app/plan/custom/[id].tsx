@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useActiveWorkout } from '@/components/active-workout-provider';
+import { AddActivityModal } from '@/components/add-activity-modal';
 import { AddExerciseButton } from '@/components/add-exercise-button';
 import { ExerciseCard, type ExerciseCardActivity } from '@/components/exercise-card';
 import { TopBar } from '@/components/top-bar';
@@ -16,7 +17,14 @@ import {
   finishWorkout,
   recordActivityProgress,
 } from '@/db/init';
-import { computeRecordedStats, type ExerciseOutcome, inferOutcome } from '@/lib/progression';
+import {
+  computeGoal,
+  computeRecordedStats,
+  type ExerciseOutcome,
+  formatSessionStats,
+  type ProgressionMode,
+  restoreOutcome,
+} from '@/lib/progression';
 import { formatElapsed, secondsSince } from '@/lib/time';
 
 type ActivityRow = {
@@ -24,26 +32,43 @@ type ActivityRow = {
   exercise_id: number | null;
   custom_name: string | null;
   custom_video_link: string | null;
+  custom_type: string | null;
   progression_pace: number | null;
   min_reps: number | null;
   max_reps: number | null;
   weight_step: number | null;
   exercise_name: string | null;
+  exercise_type: string | null;
   video_link: string | null;
 };
 
 type LastStatsRow = {
-  reps_amount: number;
+  reps_amount: number | null;
   sets_amount: number;
-  weight: number;
+  weight: number | null;
+  time: number | null;
   no: number;
 };
 
 type DraftRow = {
   activity_id: number;
-  reps_amount: number;
-  weight: number;
+  reps_amount: number | null;
+  time: number | null;
+  outcome: string | null;
 };
+
+// Time activities track seconds and sets; weight activities track reps and weight.
+function toLastStats(mode: ProgressionMode, row: LastStatsRow | null): ExerciseCardActivity['lastStats'] {
+  if (!row) {
+    return null;
+  }
+  if (mode === 'time') {
+    return row.time === null ? null : { amount: row.time, load: row.sets_amount, sets: row.sets_amount, no: row.no };
+  }
+  return row.reps_amount === null || row.weight === null
+    ? null
+    : { amount: row.reps_amount, load: row.weight, sets: row.sets_amount, no: row.no };
+}
 
 export default function CustomWorkoutPlanScreen() {
   const router = useRouter();
@@ -58,6 +83,7 @@ export default function CustomWorkoutPlanScreen() {
   const [recordedOutcomes, setRecordedOutcomes] = useState<Record<number, ExerciseOutcome>>({});
   const [summaryEntries, setSummaryEntries] = useState<WorkoutSummaryEntry[] | null>(null);
   const [summaryDuration, setSummaryDuration] = useState('');
+  const [addActivityVisible, setAddActivityVisible] = useState(false);
 
   const sessionActive = activeWorkout?.planId === planId;
 
@@ -70,9 +96,9 @@ export default function CustomWorkoutPlanScreen() {
     setPlanName(plan?.plan_name ?? '');
 
     const rows = await db.getAllAsync<ActivityRow>(
-      `SELECT activity.id, activity.exercise_id, activity.custom_name, activity.custom_video_link,
+      `SELECT activity.id, activity.exercise_id, activity.custom_name, activity.custom_video_link, activity.custom_type,
               activity.progression_pace, activity.min_reps, activity.max_reps, activity.weight_step,
-              exercise.exercise_name, exercise.video_link
+              exercise.exercise_name, exercise.exercise_type, exercise.video_link
        FROM activity
        LEFT JOIN exercise ON activity.exercise_id = exercise.id
        WHERE activity.plan_id = ?
@@ -82,22 +108,23 @@ export default function CustomWorkoutPlanScreen() {
 
     const withStats = await Promise.all(
       rows.map(async (row): Promise<ExerciseCardActivity> => {
+        const fromExercise = row.exercise_id != null;
+        const mode: ProgressionMode = (fromExercise ? row.exercise_type : row.custom_type) === 'time' ? 'time' : 'weight';
         const lastStats = await db.getFirstAsync<LastStatsRow>(
-          'SELECT reps_amount, sets_amount, weight, no FROM activity_stats WHERE activity_id = ? AND is_confirmed = 1 ORDER BY no DESC LIMIT 1',
+          'SELECT reps_amount, sets_amount, weight, time, no FROM activity_stats WHERE activity_id = ? AND is_confirmed = 1 ORDER BY no DESC LIMIT 1',
           row.id
         );
 
         return {
           id: row.id,
-          displayName: (row.exercise_id != null ? row.exercise_name : row.custom_name) ?? 'Unnamed exercise',
-          videoUrl: (row.exercise_id != null ? row.video_link : row.custom_video_link) ?? null,
+          displayName: (fromExercise ? row.exercise_name : row.custom_name) ?? 'Unnamed exercise',
+          videoUrl: (fromExercise ? row.video_link : row.custom_video_link) ?? null,
+          mode,
           progressionPace: row.progression_pace,
           minReps: row.min_reps,
           maxReps: row.max_reps,
           weightStep: row.weight_step,
-          lastStats: lastStats
-            ? { reps: lastStats.reps_amount, sets: lastStats.sets_amount, weight: lastStats.weight, no: lastStats.no }
-            : null,
+          lastStats: toLastStats(mode, lastStats),
         };
       })
     );
@@ -106,16 +133,15 @@ export default function CustomWorkoutPlanScreen() {
 
     // Rebuild card states from any drafts of this plan's activities (e.g. a restored session).
     const drafts = await db.getAllAsync<DraftRow>(
-      'SELECT activity_id, reps_amount, weight FROM activity_stats WHERE is_confirmed = 0'
+      'SELECT activity_id, reps_amount, time, outcome FROM activity_stats WHERE is_confirmed = 0'
     );
     const outcomes: Record<number, ExerciseOutcome> = {};
     for (const draft of drafts) {
       const activity = withStats.find((item) => item.id === draft.activity_id);
       if (activity?.lastStats) {
-        outcomes[activity.id] = inferOutcome(activity.lastStats, activity, {
-          reps: draft.reps_amount,
-          weight: draft.weight,
-        });
+        const goal = computeGoal(activity.mode, activity.lastStats, activity);
+        const recordedAmount = activity.mode === 'time' ? draft.time : draft.reps_amount;
+        outcomes[activity.id] = restoreOutcome(draft.outcome, goal, recordedAmount ?? goal.amount);
       }
     }
     setRecordedOutcomes(outcomes);
@@ -144,12 +170,13 @@ export default function CustomWorkoutPlanScreen() {
       if (!outcome || !activity.lastStats) {
         continue;
       }
-      const { reps, sets, weight } = activity.lastStats;
+      const recorded = computeRecordedStats(activity.mode, activity.lastStats, activity, outcome);
+      const afterSets = activity.mode === 'time' ? recorded.load : activity.lastStats.sets;
       entries.push({
         activityId: activity.id,
         name: activity.displayName,
-        before: { reps, sets, weight },
-        after: { ...computeRecordedStats(activity.lastStats, activity, outcome), sets },
+        before: formatSessionStats(activity.mode, activity.lastStats),
+        after: formatSessionStats(activity.mode, { ...recorded, sets: afterSets }),
       });
     }
 
@@ -187,13 +214,16 @@ export default function CustomWorkoutPlanScreen() {
         return;
       }
 
-      const recorded = computeRecordedStats(activity.lastStats, activity, outcome);
+      const isTime = activity.mode === 'time';
+      const recorded = computeRecordedStats(activity.mode, activity.lastStats, activity, outcome);
       await recordActivityProgress(db, {
         activity_id: activityId,
         no: activity.lastStats.no + 1,
-        sets_amount: activity.lastStats.sets,
-        reps_amount: recorded.reps,
-        weight: recorded.weight,
+        sets_amount: isTime ? recorded.load : activity.lastStats.sets,
+        reps_amount: isTime ? null : recorded.amount,
+        weight: isTime ? null : recorded.load,
+        time: isTime ? recorded.amount : null,
+        outcome: outcome.kind,
       });
 
       await Haptics.notificationAsync(
@@ -242,7 +272,7 @@ export default function CustomWorkoutPlanScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <AddExerciseButton />
+        <AddExerciseButton onPress={() => setAddActivityVisible(true)} />
         {activities.map((activity) => (
           <ExerciseCard
             key={activity.id}
@@ -254,6 +284,13 @@ export default function CustomWorkoutPlanScreen() {
           />
         ))}
       </ScrollView>
+
+      <AddActivityModal
+        visible={addActivityVisible}
+        planId={planId}
+        onClose={() => setAddActivityVisible(false)}
+        onSaved={loadActivities}
+      />
 
       <WorkoutSummaryModal
         visible={summaryEntries !== null}
