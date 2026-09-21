@@ -63,8 +63,8 @@ export function AddActivityModal({
   const [repsPace, setRepsPace] = useState(1);
   const [timePace, setTimePace] = useState(5);
 
-  const [weightOnly, setWeightOnly] = useState(false);
-  const [lockSets, setLockSets] = useState(false);
+  const [weightOnlyChoice, setWeightOnly] = useState(false);
+  const [lockSetsChoice, setLockSets] = useState(false);
   const [noAutoProgress, setNoAutoProgress] = useState(false);
 
   const isTime = customType === 'time';
@@ -72,6 +72,10 @@ export function AddActivityModal({
   const range = isTime ? timeRange : repsRange;
   const setRange = isTime ? setTimeRange : setRepsRange;
   const setPace = isTime ? setTimePace : setRepsPace;
+  // Without auto progress nothing can change, so the range-hiding option is forced on in
+  // both modes. The user's own choice is kept underneath and comes back afterwards.
+  const weightOnly = weightOnlyChoice || noAutoProgress;
+  const lockSets = lockSetsChoice || noAutoProgress;
   const rangeHidden = isTime ? lockSets : weightOnly;
   // Weight-only progression always moves one step per session, so the pace isn't chosen.
   const paceHidden = !isTime && weightOnly;
@@ -285,6 +289,7 @@ export function AddActivityModal({
                       label="Progress with weight only"
                       description="Amount of reps will remain the same"
                       checked={weightOnly}
+                      disabled={noAutoProgress}
                       onPress={() => setWeightOnly((prev) => !prev)}
                     />
                   )}
