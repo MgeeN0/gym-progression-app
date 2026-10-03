@@ -4,12 +4,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { TopBar } from '@/components/top-bar';
+import { ValidatedInput } from '@/components/validated-input';
 import { Colors, Radii } from '@/constants/theme';
 import { PLAN_TYPES } from '@/constants/plan-types';
 import { createPlan } from '@/db/init';
+import { isValidName, isValidNote } from '@/lib/validation';
 
 const SPLIT_OPTIONS = [
   {
@@ -37,10 +39,12 @@ export default function AddPlanScreen() {
   const [daysPerPlan, setDaysPerPlan] = useState(3);
   const [note, setNote] = useState('');
 
-  const canSave = planName.trim().length > 0 && selectedSplit !== null;
+  const nameValid = isValidName(planName);
+  const noteValid = isValidNote(note);
+  const canSave = planName.trim().length > 0 && nameValid && noteValid && selectedSplit !== null;
 
   const handleCreate = useCallback(async () => {
-    if (!selectedSplit || planName.trim().length === 0) {
+    if (!canSave || !selectedSplit) {
       return;
     }
 
@@ -50,7 +54,7 @@ export default function AddPlanScreen() {
       days_per_plan: selectedSplit === PLAN_TYPES.fullBodyWorkout ? daysPerPlan : null,
       note: note.trim().length > 0 ? note.trim() : null,
     });
-  }, [db, planName, selectedSplit, daysPerPlan, note]);
+  }, [db, canSave, planName, selectedSplit, daysPerPlan, note]);
 
   const handleGoBack = useCallback(() => {
     router.back();
@@ -73,8 +77,9 @@ export default function AddPlanScreen() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Plan name</Text>
-        <TextInput
+        <ValidatedInput
           style={styles.input}
+          invalid={!nameValid}
           placeholder="Name..."
           placeholderTextColor={Colors.textSecondary}
           value={planName}
@@ -123,8 +128,9 @@ export default function AddPlanScreen() {
         )}
 
         <Text style={[styles.label, styles.sectionLabel]}>Notes (optional)</Text>
-        <TextInput
+        <ValidatedInput
           style={[styles.input, styles.textarea]}
+          invalid={!noteValid}
           placeholder="Note..."
           placeholderTextColor={Colors.textSecondary}
           value={note}

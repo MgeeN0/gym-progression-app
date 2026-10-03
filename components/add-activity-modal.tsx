@@ -2,12 +2,21 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { KeyboardDoneBar } from '@/components/keyboard-done-bar';
 import { RangeSlider } from '@/components/range-slider';
+import { ValidatedInput, ValidationMessage } from '@/components/validated-input';
 import { Colors, Radii } from '@/constants/theme';
 import { createActivity } from '@/db/init';
+import {
+  isValidDecimal,
+  isValidInteger,
+  isValidName,
+  isValidYoutubeLink,
+  normalizeYoutubeLink,
+  parseDecimal,
+} from '@/lib/validation';
 
 export type ActivityMode = 'custom' | 'browser';
 export type CustomActivityType = 'weight' | 'time';
@@ -27,9 +36,9 @@ const LIMITS = {
   time: { range: { min: 1, max: 120 }, pace: { min: 0.5, max: 20 } },
 };
 
-function toNumber(value: string) {
-  const parsed = Number(value.replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : null;
+// A field counts as filled only when it has a value that passes its rule.
+function filled(value: string, isValid: (value: string) => boolean) {
+  return value !== '' && isValid(value);
 }
 
 export function AddActivityModal({
@@ -82,17 +91,31 @@ export function AddActivityModal({
   const paceHidden = !isTime && weightOnly;
   const pace = isTime ? timePace : paceHidden ? 1 : repsPace;
 
-  const startSetsValue = toNumber(startSets);
-  const startRepsValue = toNumber(startReps);
-  const startWeightValue = toNumber(startWeight);
-  const startTimeValue = toNumber(startTime);
-  const weightStepValue = toNumber(weightStep);
+  const trimmedLink = customVideoLink.trim();
+  const nameValid = isValidName(customName);
+  const linkValid = isValidYoutubeLink(trimmedLink);
+  const canContinue = customName.trim().length > 0 && nameValid && linkValid;
 
+  // Progression starts from the starting point and moves inside the range, so a starting
+  // point outside the range has nowhere to go. Only checked while the range is in use.
+  const outsideRange = (value: string) => {
+    const parsed = parseDecimal(value);
+    return parsed < range[0] || parsed > range[1];
+  };
+  const startRepsOutOfRange =
+    !isTime && !rangeHidden && filled(startReps, isValidInteger) && outsideRange(startReps);
+  const startTimeOutOfRange =
+    isTime && !rangeHidden && filled(startTime, isValidDecimal) && outsideRange(startTime);
+  const rangeError = `Starting point can not be outside of ${isTime ? 'time' : 'reps'} range`;
+
+  // Only the fields visible for the current type and options have to be filled in.
   const canSave =
-    customName.trim().length > 0 &&
-    startSetsValue !== null &&
-    (isTime ? startTimeValue !== null : startRepsValue !== null && startWeightValue !== null) &&
-    (isTime || noAutoProgress || weightStepValue !== null);
+    canContinue &&
+    filled(startSets, isValidInteger) &&
+    (isTime
+      ? filled(startTime, isValidDecimal) && !startTimeOutOfRange
+      : filled(startReps, isValidInteger) && !startRepsOutOfRange && filled(startWeight, isValidDecimal)) &&
+    (isTime || noAutoProgress || filled(weightStep, isValidDecimal));
 
   const close = () => {
     onClose();
@@ -100,9 +123,11 @@ export function AddActivityModal({
   };
 
   const handleSave = async () => {
-    if (!canSave || startSetsValue === null) {
+    if (!canSave) {
       return;
     }
+
+    const repsValue = Number(startReps);
 
     // Weight mode: "Progress with weight only" pins the range to the starting reps so only weight moves.
     // Time mode: "Lock sets" clears the range, which is what drives the set increase.
@@ -111,26 +136,26 @@ export function AddActivityModal({
     if (isTime && lockSets) {
       rangeLow = null;
       rangeHigh = null;
-    } else if (!isTime && weightOnly && startRepsValue !== null) {
-      rangeLow = startRepsValue;
-      rangeHigh = startRepsValue;
+    } else if (!isTime && weightOnly) {
+      rangeLow = repsValue;
+      rangeHigh = repsValue;
     }
 
     await createActivity(db, {
       planId,
       customName: customName.trim(),
-      customVideoLink: customVideoLink.trim() || null,
+      customVideoLink: trimmedLink ? normalizeYoutubeLink(trimmedLink) : null,
       customType,
       minReps: rangeLow,
       maxReps: rangeHigh,
       // Time activities progress by whole sets, so there is no weight step.
-      weightStep: isTime || noAutoProgress ? null : weightStepValue,
+      weightStep: isTime || noAutoProgress ? null : parseDecimal(weightStep),
       progressionPace: noAutoProgress ? 0 : pace,
       start: {
-        sets: startSetsValue,
-        reps: isTime ? null : startRepsValue,
-        weight: isTime ? null : startWeightValue,
-        time: isTime ? startTimeValue : null,
+        sets: Number(startSets),
+        reps: isTime ? null : repsValue,
+        weight: isTime ? null : parseDecimal(startWeight),
+        time: isTime ? parseDecimal(startTime) : null,
       },
     });
 
@@ -171,8 +196,9 @@ export function AddActivityModal({
                     <>
                       <View style={styles.field}>
                         <Text style={styles.label}>Activity name</Text>
-                        <TextInput
+                        <ValidatedInput
                           style={styles.input}
+                          invalid={!nameValid}
                           placeholder="Bench press"
                           placeholderTextColor={Colors.textSecondary}
                           value={customName}
@@ -182,13 +208,15 @@ export function AddActivityModal({
 
                       <View style={styles.field}>
                         <Text style={styles.label}>Youtube demo link (optional)</Text>
-                        <TextInput
+                        <ValidatedInput
                           style={styles.input}
+                          invalid={!linkValid}
                           placeholder="https://youtube.com/..."
                           placeholderTextColor={Colors.textSecondary}
                           value={customVideoLink}
                           onChangeText={setCustomVideoLink}
                           autoCapitalize="none"
+                          autoCorrect={false}
                           keyboardType="url"
                         />
                       </View>
@@ -207,7 +235,12 @@ export function AddActivityModal({
                         </View>
                       </View>
 
-                      <GradientButton label="Next" icon="arrow-right" onPress={() => setPage(2)} />
+                      <GradientButton
+                        label="Next"
+                        icon="arrow-right"
+                        onPress={() => setPage(2)}
+                        disabled={!canContinue}
+                      />
                     </>
                   ) : (
                     <View style={styles.placeholder} />
@@ -218,14 +251,37 @@ export function AddActivityModal({
                   <Text style={styles.sectionLabel}>Choose starting point</Text>
 
                   <View style={styles.startRow}>
-                    {!isTime && <NumberField label="Reps" value={startReps} onChangeText={setStartReps} />}
-                    <NumberField label="Sets" value={startSets} onChangeText={setStartSets} />
+                    {!isTime && (
+                      <NumberField
+                        label="Reps"
+                        kind="integer"
+                        value={startReps}
+                        onChangeText={setStartReps}
+                        invalid={startRepsOutOfRange}
+                      />
+                    )}
+                    <NumberField label="Sets" kind="integer" value={startSets} onChangeText={setStartSets} />
                     {isTime ? (
-                      <NumberField label="Time (s)" value={startTime} onChangeText={setStartTime} />
+                      <NumberField
+                        label="Time (s)"
+                        kind="decimal"
+                        value={startTime}
+                        onChangeText={setStartTime}
+                        invalid={startTimeOutOfRange}
+                      />
                     ) : (
-                      <NumberField label="Weight (kg)" value={startWeight} onChangeText={setStartWeight} />
+                      <NumberField
+                        label="Weight (kg)"
+                        kind="decimal"
+                        value={startWeight}
+                        onChangeText={setStartWeight}
+                      />
                     )}
                   </View>
+
+                  {(startRepsOutOfRange || startTimeOutOfRange) && (
+                    <ValidationMessage>{rangeError}</ValidationMessage>
+                  )}
 
                   {!rangeHidden && (
                     <View style={styles.field}>
@@ -254,11 +310,12 @@ export function AddActivityModal({
                       {!isTime && (
                         <View style={styles.weightStepField}>
                           <Text style={styles.label}>Weight step</Text>
-                          <TextInput
+                          <ValidatedInput
                             style={styles.input}
+                            invalid={!isValidDecimal(weightStep)}
                             value={weightStep}
                             onChangeText={setWeightStep}
-                            keyboardType="numeric"
+                            keyboardType="decimal-pad"
                             placeholderTextColor={Colors.textSecondary}
                           />
                         </View>
@@ -407,21 +464,28 @@ function CheckboxRow({
 
 function NumberField({
   label,
+  kind,
   value,
   onChangeText,
+  invalid,
 }: {
   label: string;
+  kind: 'integer' | 'decimal';
   value: string;
   onChangeText: (value: string) => void;
+  /** Set when something outside the field's own format makes the value wrong. */
+  invalid?: boolean;
 }) {
+  const isValid = kind === 'integer' ? isValidInteger : isValidDecimal;
   return (
     <View style={styles.numberField}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
+      <ValidatedInput
         style={styles.input}
+        invalid={!isValid(value) || !!invalid}
         value={value}
         onChangeText={onChangeText}
-        keyboardType="numeric"
+        keyboardType={kind === 'integer' ? 'number-pad' : 'decimal-pad'}
         placeholderTextColor={Colors.textSecondary}
       />
     </View>
