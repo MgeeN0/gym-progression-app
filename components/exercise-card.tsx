@@ -72,6 +72,7 @@ export function ExerciseCard({
   onRecordOutcome,
   onUndo,
   onEdit,
+  onDelete,
 }: {
   activity: ExerciseCardActivity;
   sessionActive: boolean;
@@ -80,6 +81,7 @@ export function ExerciseCard({
   onRecordOutcome: (outcome: ExerciseOutcome) => void;
   onUndo: () => void;
   onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [picker, setPicker] = useState<PickerKind | null>(null);
@@ -256,6 +258,13 @@ export function ExerciseCard({
                   disabled={!onEdit}
                 >
                   <MaterialCommunityIcons name="pencil-outline" size={20} color={Colors.textSecondary} />
+                </Pressable>
+                <Pressable
+                  style={[styles.iconButton, styles.deleteButton, !onDelete && styles.iconButtonDisabled]}
+                  onPress={onDelete}
+                  disabled={!onDelete}
+                >
+                  <MaterialCommunityIcons name="close" size={20} color={DANGER_COLOR} />
                 </Pressable>
                 <Pressable
                   style={[styles.iconButton, outcome === undefined && styles.iconButtonDisabled]}
@@ -662,5 +671,19 @@ const styles = StyleSheet.create({
   },
   iconButtonDisabled: {
     opacity: 0.4,
+  },
+  deleteButton: {
+    borderColor: `${DANGER_COLOR}80`,
+    backgroundColor: `${DANGER_COLOR}14`,
+    ...Platform.select({
+      ios: {
+        shadowColor: DANGER_COLOR,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.45,
+        shadowRadius: 7,
+      },
+      android: { elevation: 4 },
+      web: { boxShadow: `0 3px 10px -2px ${DANGER_COLOR}99` },
+    }),
   },
 });

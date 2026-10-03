@@ -12,6 +12,7 @@ import { TopBar } from '@/components/top-bar';
 import { WorkoutSummaryModal, type WorkoutSummaryEntry } from '@/components/workout-summary-modal';
 import { Colors } from '@/constants/theme';
 import {
+  deleteActivity,
   deleteDraftActivityStats,
   discardUnfinishedWorkout,
   finishWorkout,
@@ -123,7 +124,6 @@ export default function CustomWorkoutPlanScreen() {
     );
 
     const editPayloads: Record<number, EditableActivity> = {};
-    const modes: Record<number, ProgressionMode> = {};
 
     const withStats = await Promise.all(
       rows.map(async (row): Promise<ExerciseCardActivity> => {
@@ -134,7 +134,6 @@ export default function CustomWorkoutPlanScreen() {
           row.id
         );
 
-        modes[row.id] = mode;
         // Only custom activities carry their own editable fields; browser ones live in `exercise`.
         if (!fromExercise) {
           editPayloads[row.id] = {
@@ -298,6 +297,28 @@ export default function CustomWorkoutPlanScreen() {
     [db, activities]
   );
 
+  const handleDelete = useCallback(
+    (activityId: number) => {
+      Alert.alert(
+        'Are you sure you want to delete this activity?',
+        'Progress history will be deleted as well.',
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Yes',
+            style: 'destructive',
+            onPress: async () => {
+              await deleteActivity(db, activityId);
+              setEditing(null);
+              await loadActivities();
+            },
+          },
+        ]
+      );
+    },
+    [db, loadActivities]
+  );
+
   const handleUndo = useCallback(
     async (activityId: number) => {
       await deleteDraftActivityStats(db, activityId);
@@ -347,6 +368,7 @@ export default function CustomWorkoutPlanScreen() {
             onRecordOutcome={(outcome) => handleRecordOutcome(activity.id, outcome)}
             onUndo={() => handleUndo(activity.id)}
             onEdit={editable[activity.id] ? () => setEditing(editable[activity.id]) : undefined}
+            onDelete={() => handleDelete(activity.id)}
           />
         ))}
       </ScrollView>

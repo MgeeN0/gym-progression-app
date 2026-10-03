@@ -507,6 +507,14 @@ export async function updateActivity(
   });
 }
 
+/** Removes an activity with its whole progress history, drafts included. */
+export async function deleteActivity(db: SQLiteDatabase, activityId: number) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM activity_stats WHERE activity_id = ?', activityId);
+    await db.runAsync('DELETE FROM activity WHERE id = ?', activityId);
+  });
+}
+
 export async function deleteDraftActivityStats(db: SQLiteDatabase, activityId: number) {
   await db.runAsync('DELETE FROM activity_stats WHERE activity_id = ? AND is_confirmed = 0', activityId);
 }
