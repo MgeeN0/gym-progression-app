@@ -48,8 +48,10 @@ function loadStep(mode: ProgressionMode, rules: ProgressionRules) {
 }
 
 function adjustLoad(mode: ProgressionMode, last: Session, minAmount: number, delta: number): ProgressionGoal {
-  // A time activity can't drop below one set.
-  const load = mode === 'time' ? Math.max(1, last.load + delta) : roundValue(last.load + delta);
+  // A time activity can't drop below one set, and weight can't go negative: a 2 kg
+  // activity with a 3 kg step lands on 0 kg instead of -1 kg.
+  const load =
+    mode === 'time' ? Math.max(1, last.load + delta) : Math.max(0, roundValue(last.load + delta));
   return {
     amount: minAmount,
     load,
