@@ -61,18 +61,25 @@ export type ExerciseCardActivity = ProgressionRules & {
   lastStats: { amount: number; load: number; sets: number; no: number } | null;
 };
 
+/** What the open session actually stored for an activity, in the same amount/load pair. */
+export type RecordedStats = { amount: number; load: number; sets: number };
+
 export function ExerciseCard({
   activity,
   sessionActive,
   outcome,
+  recorded,
   onRecordOutcome,
   onUndo,
+  onEdit,
 }: {
   activity: ExerciseCardActivity;
   sessionActive: boolean;
   outcome: ExerciseOutcome | undefined;
+  recorded?: RecordedStats;
   onRecordOutcome: (outcome: ExerciseOutcome) => void;
   onUndo: () => void;
+  onEdit?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [picker, setPicker] = useState<PickerKind | null>(null);
@@ -89,6 +96,8 @@ export function ExerciseCard({
     ? [outcomeColors.outline, outcomeColors.outline]
     : [Colors.accentStart, Colors.accentEnd];
 
+  // A met card shows what was recorded; more/less keep their "goal ± n" wording below.
+  const met = outcome?.kind === 'met' ? recorded : undefined;
   const amountName = isTime ? 'Time' : 'Reps';
   const amountUnit = isTime ? ' s' : '';
   let amountLabel = `${amountName}: —`;
@@ -101,11 +110,13 @@ export function ExerciseCard({
       amountLabel = `${amountName}: ${goal.amount} - ${outcome.amount}${amountUnit}`;
       amountAccent = LESS_COLOR;
     } else {
-      amountLabel = `${amountName}: ${goal.amount}${amountUnit}`;
+      // "Save & confirm" on an edit stores the user's own numbers, which need not match the goal.
+      amountLabel = `${amountName}: ${met?.amount ?? goal.amount}${amountUnit}`;
     }
   }
   // In time mode the sets are the load, so the goal can change them.
-  const setsValue = goal ? (isTime ? goal.load : activity.lastStats?.sets) : undefined;
+  const setsValue = goal ? (isTime ? met?.load ?? goal.load : met?.sets ?? activity.lastStats?.sets) : undefined;
+  const loadValue = met?.load ?? goal?.load;
 
   // Buttons are fixed-size and centered, so their centers follow from the row's layout.
   const pickerOrigins: Record<PickerKind, Point> | null = actionsLayout
@@ -176,7 +187,7 @@ export function ExerciseCard({
                   accent={amountAccent}
                 />
                 <StatPill icon="repeat" label={`Sets: ${setsValue ?? '—'}`} />
-                {!isTime && <StatPill icon="weight-kilogram" label={goal ? `${goal.load} kg` : '—'} />}
+                {!isTime && <StatPill icon="weight-kilogram" label={goal ? `${loadValue} kg` : '—'} />}
               </View>
 
               <View style={styles.actionsRow} onLayout={(event) => setActionsLayout(event.nativeEvent.layout)}>
@@ -239,7 +250,11 @@ export function ExerciseCard({
               </View>
 
               <View style={styles.iconRow}>
-                <Pressable style={styles.iconButton}>
+                <Pressable
+                  style={[styles.iconButton, !onEdit && styles.iconButtonDisabled]}
+                  onPress={onEdit}
+                  disabled={!onEdit}
+                >
                   <MaterialCommunityIcons name="pencil-outline" size={20} color={Colors.textSecondary} />
                 </Pressable>
                 <Pressable

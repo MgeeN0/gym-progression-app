@@ -8,7 +8,7 @@ import { KeyboardDoneBar } from '@/components/keyboard-done-bar';
 import { RangeSlider } from '@/components/range-slider';
 import { ValidatedInput, ValidationHintButton, ValidationMessage } from '@/components/validated-input';
 import { Colors, Radii } from '@/constants/theme';
-import { createActivity } from '@/db/init';
+import { createActivity, updateActivity } from '@/db/init';
 import {
   isValidDecimal,
   isValidInteger,
@@ -36,6 +36,68 @@ const LIMITS = {
   time: { range: { min: 1, max: 120 }, pace: { min: 0.5, max: 20 } },
 };
 
+/** Everything needed to reopen the creator on an existing activity. */
+export type EditableActivity = {
+  id: number;
+  customName: string;
+  customVideoLink: string | null;
+  customType: CustomActivityType;
+  minReps: number | null;
+  maxReps: number | null;
+  weightStep: number | null;
+  progressionPace: number | null;
+  // The latest confirmed session, which is what the starting point fields edit.
+  last: { sets: number; reps: number | null; weight: number | null; time: number | null };
+};
+
+const DEFAULTS = {
+  reps: '10',
+  sets: '4',
+  weight: '40',
+  time: '60',
+  weightStep: '2.5',
+  repsRange: [8, 12],
+  timeRange: [30, 60],
+  repsPace: 1,
+  timePace: 5,
+};
+
+function numberText(value: number | null | undefined, fallback: string) {
+  return value == null ? fallback : String(value);
+}
+
+/**
+ * Rebuilds the checkbox states from the stored columns: a pace of 0 means auto progress was
+ * off, a pinned range (min === max) means weight-only, and a missing range means locked sets.
+ * A 0 kg weight step would be indistinguishable from "off", which validation will rule out.
+ */
+function storedOptions(editing: EditableActivity | null) {
+  if (!editing) {
+    return { weightOnly: false, lockSets: false, noAutoProgress: false };
+  }
+  const { customType, minReps, maxReps, progressionPace } = editing;
+  return {
+    weightOnly: customType === 'weight' && minReps !== null && minReps === maxReps,
+    lockSets: customType === 'time' && (minReps === null || maxReps === null),
+    noAutoProgress: (progressionPace ?? 0) === 0,
+  };
+}
+
+// A hidden range isn't stored, so unchecking its option falls back to the creator's default.
+function storedRange(editing: EditableActivity | null, mode: CustomActivityType, fallback: number[]) {
+  if (!editing || editing.customType !== mode || editing.minReps === null || editing.maxReps === null) {
+    return fallback;
+  }
+  return mode === 'weight' && editing.minReps === editing.maxReps
+    ? fallback
+    : [editing.minReps, editing.maxReps];
+}
+
+function storedPace(editing: EditableActivity | null, mode: CustomActivityType, fallback: number) {
+  const pace = editing?.progressionPace ?? 0;
+  return editing?.customType === mode && pace > 0 ? pace : fallback;
+}
+
 // A field counts as filled only when it has a value that passes its rule.
 function filled(value: string, isValid: (value: string) => boolean) {
   return value !== '' && isValid(value);
@@ -44,38 +106,49 @@ function filled(value: string, isValid: (value: string) => boolean) {
 export function AddActivityModal({
   visible,
   planId,
+  editing = null,
+  sessionActive = false,
   onClose,
   onSaved,
 }: {
   visible: boolean;
   planId: number;
+  /** Set to edit that activity instead of creating a new one. */
+  editing?: EditableActivity | null;
+  sessionActive?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const db = useSQLiteContext();
+  const options = storedOptions(editing);
 
+  // The modal is keyed per activity, so these initial values are read once per open.
   const [page, setPage] = useState(1);
   const [mode, setMode] = useState<ActivityMode>('custom');
-  const [customName, setCustomName] = useState('');
-  const [customVideoLink, setCustomVideoLink] = useState('');
-  const [customType, setCustomType] = useState<CustomActivityType>('weight');
+  const [customName, setCustomName] = useState(editing?.customName ?? '');
+  const [customVideoLink, setCustomVideoLink] = useState(editing?.customVideoLink ?? '');
+  const [customType, setCustomType] = useState<CustomActivityType>(editing?.customType ?? 'weight');
 
   // Starting point
-  const [startReps, setStartReps] = useState('10');
-  const [startSets, setStartSets] = useState('4');
-  const [startWeight, setStartWeight] = useState('40');
-  const [startTime, setStartTime] = useState('60');
+  const [startReps, setStartReps] = useState(numberText(editing?.last.reps, DEFAULTS.reps));
+  const [startSets, setStartSets] = useState(numberText(editing?.last.sets, DEFAULTS.sets));
+  const [startWeight, setStartWeight] = useState(numberText(editing?.last.weight, DEFAULTS.weight));
+  const [startTime, setStartTime] = useState(numberText(editing?.last.time, DEFAULTS.time));
 
   // Kept per activity type so switching type doesn't lose the other one's values.
-  const [repsRange, setRepsRange] = useState([8, 12]);
-  const [timeRange, setTimeRange] = useState([30, 60]);
-  const [weightStep, setWeightStep] = useState('2.5');
-  const [repsPace, setRepsPace] = useState(1);
-  const [timePace, setTimePace] = useState(5);
+  const [repsRange, setRepsRange] = useState(() => storedRange(editing, 'weight', DEFAULTS.repsRange));
+  const [timeRange, setTimeRange] = useState(() => storedRange(editing, 'time', DEFAULTS.timeRange));
+  const [weightStep, setWeightStep] = useState(numberText(editing?.weightStep, DEFAULTS.weightStep));
+  const [repsPace, setRepsPace] = useState(() => storedPace(editing, 'weight', DEFAULTS.repsPace));
+  const [timePace, setTimePace] = useState(() => storedPace(editing, 'time', DEFAULTS.timePace));
 
-  const [weightOnlyChoice, setWeightOnly] = useState(false);
-  const [lockSetsChoice, setLockSets] = useState(false);
-  const [noAutoProgress, setNoAutoProgress] = useState(false);
+  // Editing the stored progression point is opt-in, so a rules-only edit (a renamed
+  // activity, a different weight step) is never blocked by numbers the user didn't touch.
+  const [editStats, setEditStats] = useState(false);
+
+  const [weightOnlyChoice, setWeightOnly] = useState(options.weightOnly);
+  const [lockSetsChoice, setLockSets] = useState(options.lockSets);
+  const [noAutoProgress, setNoAutoProgress] = useState(options.noAutoProgress);
 
   const isTime = customType === 'time';
   const limits = isTime ? LIMITS.time : LIMITS.weight;
@@ -102,10 +175,12 @@ export function AddActivityModal({
     const parsed = parseDecimal(value);
     return parsed < range[0] || parsed > range[1];
   };
+  // Creating always sets the starting point; editing only when asked to.
+  const statsEditable = !editing || editStats;
   const startRepsOutOfRange =
-    !isTime && !rangeHidden && filled(startReps, isValidInteger) && outsideRange(startReps);
+    statsEditable && !isTime && !rangeHidden && filled(startReps, isValidInteger) && outsideRange(startReps);
   const startTimeOutOfRange =
-    isTime && !rangeHidden && filled(startTime, isValidDecimal) && outsideRange(startTime);
+    statsEditable && isTime && !rangeHidden && filled(startTime, isValidDecimal) && outsideRange(startTime);
   const rangeError = `Starting point can not be outside of ${isTime ? 'time' : 'reps'} range`;
   const rangeInvalid = startRepsOutOfRange || startTimeOutOfRange;
 
@@ -121,12 +196,14 @@ export function AddActivityModal({
   }
 
   // Only the fields visible for the current type and options have to be filled in.
-  const canSave =
-    canContinue &&
+  const statsValid =
     filled(startSets, isValidInteger) &&
     (isTime
       ? filled(startTime, isValidDecimal) && !startTimeOutOfRange
-      : filled(startReps, isValidInteger) && !startRepsOutOfRange && filled(startWeight, isValidDecimal)) &&
+      : filled(startReps, isValidInteger) && !startRepsOutOfRange && filled(startWeight, isValidDecimal));
+  const canSave =
+    canContinue &&
+    (!statsEditable || statsValid) &&
     (isTime || noAutoProgress || filled(weightStep, isValidDecimal));
 
   const close = () => {
@@ -134,7 +211,9 @@ export function AddActivityModal({
     setPage(1);
   };
 
-  const handleSave = async () => {
+  // `confirm` only applies to an edit mid-workout: the edited numbers become this
+  // session's recorded result instead of confirmed history with a goal still to meet.
+  const handleSave = async (confirm: boolean) => {
     if (!canSave) {
       return;
     }
@@ -149,27 +228,40 @@ export function AddActivityModal({
       rangeLow = null;
       rangeHigh = null;
     } else if (!isTime && weightOnly) {
-      rangeLow = repsValue;
-      rangeHigh = repsValue;
+      // An activity that was already weight-only keeps its pin unless the point is being
+      // edited, so a "+2" session can't quietly move the reps it's locked to.
+      const alreadyPinned = editing !== null && editing.minReps !== null && editing.minReps === editing.maxReps;
+      const pinned = statsEditable || !alreadyPinned ? repsValue : editing.minReps;
+      rangeLow = pinned;
+      rangeHigh = pinned;
     }
 
-    await createActivity(db, {
-      planId,
+    const rules = {
       customName: customName.trim(),
       customVideoLink: trimmedLink ? normalizeYoutubeLink(trimmedLink) : null,
-      customType,
       minReps: rangeLow,
       maxReps: rangeHigh,
       // Time activities progress by whole sets, so there is no weight step.
       weightStep: isTime || noAutoProgress ? null : parseDecimal(weightStep),
       progressionPace: noAutoProgress ? 0 : pace,
-      start: {
-        sets: Number(startSets),
-        reps: isTime ? null : repsValue,
-        weight: isTime ? null : parseDecimal(startWeight),
-        time: isTime ? parseDecimal(startTime) : null,
-      },
-    });
+    };
+    const stats = {
+      sets: Number(startSets),
+      reps: isTime ? null : repsValue,
+      weight: isTime ? null : parseDecimal(startWeight),
+      time: isTime ? parseDecimal(startTime) : null,
+    };
+
+    if (editing) {
+      await updateActivity(db, {
+        activityId: editing.id,
+        ...rules,
+        confirm,
+        stats: statsEditable ? stats : null,
+      });
+    } else {
+      await createActivity(db, { planId, customType, ...rules, start: stats });
+    }
 
     onSaved();
     close();
@@ -188,21 +280,29 @@ export function AddActivityModal({
           >
             <View style={styles.card}>
               <Text style={styles.title}>
-                {page === 1 ? 'Create new activity' : 'Choose activity details'}
+                {page === 2
+                  ? editing
+                    ? 'Edit activity details'
+                    : 'Choose activity details'
+                  : editing
+                    ? 'Edit activity'
+                    : 'Create new activity'}
               </Text>
 
               {page === 1 ? (
                 <>
-                  <View style={styles.segmented}>
-                    {MODES.map((option) => (
-                      <SegmentButton
-                        key={option.value}
-                        label={option.label}
-                        selected={mode === option.value}
-                        onPress={() => setMode(option.value)}
-                      />
-                    ))}
-                  </View>
+                  {!editing && (
+                    <View style={styles.segmented}>
+                      {MODES.map((option) => (
+                        <SegmentButton
+                          key={option.value}
+                          label={option.label}
+                          selected={mode === option.value}
+                          onPress={() => setMode(option.value)}
+                        />
+                      ))}
+                    </View>
+                  )}
 
                   {mode === 'custom' ? (
                     <>
@@ -241,10 +341,13 @@ export function AddActivityModal({
                               key={option.value}
                               label={option.label}
                               selected={customType === option.value}
+                              // Past sessions fill type-specific columns, so the type is fixed once set.
+                              disabled={!!editing}
                               onPress={() => setCustomType(option.value)}
                             />
                           ))}
                         </View>
+                        {editing && <Text style={styles.hint}>Activity type can not be changed</Text>}
                       </View>
 
                       <GradientButton
@@ -260,7 +363,18 @@ export function AddActivityModal({
                 </>
               ) : (
                 <>
-                  <Text style={styles.sectionLabel}>Choose starting point</Text>
+                  <Text style={styles.sectionLabel}>
+                    {editing ? 'Current progression point' : 'Choose starting point'}
+                  </Text>
+
+                  {editing && (
+                    <CheckboxRow
+                      label="Edit current progression point"
+                      description="Adds a new progression record with the numbers below"
+                      checked={editStats}
+                      onPress={() => setEditStats((prev) => !prev)}
+                    />
+                  )}
 
                   <View style={styles.startRow}>
                     {!isTime && (
@@ -271,9 +385,16 @@ export function AddActivityModal({
                         onChangeText={setStartReps}
                         invalid={startRepsOutOfRange}
                         onHelpPress={() => setRangeHelpShown(true)}
+                        disabled={!statsEditable}
                       />
                     )}
-                    <NumberField label="Sets" kind="integer" value={startSets} onChangeText={setStartSets} />
+                    <NumberField
+                      label="Sets"
+                      kind="integer"
+                      value={startSets}
+                      onChangeText={setStartSets}
+                      disabled={!statsEditable}
+                    />
                     {isTime ? (
                       <NumberField
                         label="Time (s)"
@@ -282,6 +403,7 @@ export function AddActivityModal({
                         onChangeText={setStartTime}
                         invalid={startTimeOutOfRange}
                         onHelpPress={() => setRangeHelpShown(true)}
+                        disabled={!statsEditable}
                       />
                     ) : (
                       <NumberField
@@ -289,6 +411,7 @@ export function AddActivityModal({
                         kind="decimal"
                         value={startWeight}
                         onChangeText={setStartWeight}
+                        disabled={!statsEditable}
                       />
                     )}
                   </View>
@@ -386,8 +509,18 @@ export function AddActivityModal({
                       <MaterialCommunityIcons name="arrow-left" size={18} color={Colors.textSecondary} />
                       <Text style={styles.previousLabel}>Previous</Text>
                     </Pressable>
-                    <GradientButton label="Save" onPress={handleSave} disabled={!canSave} />
+                    <GradientButton label="Save" onPress={() => handleSave(false)} disabled={!canSave} />
                   </View>
+
+                  {/* Mid-workout the edited progression point can double as this session's result. */}
+                  {editing && sessionActive && statsEditable && (
+                    <GradientButton
+                      label="Save & confirm"
+                      icon="check"
+                      onPress={() => handleSave(true)}
+                      disabled={!canSave}
+                    />
+                  )}
                 </>
               )}
             </View>
@@ -426,9 +559,19 @@ function SegmentButton({
   );
 }
 
-function RadioRow({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+function RadioRow({
+  label,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
   return (
-    <Pressable style={styles.radioRow} onPress={onPress}>
+    <Pressable style={[styles.radioRow, disabled && styles.radioRowDisabled]} onPress={onPress} disabled={disabled}>
       <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
         {selected && (
           <LinearGradient
@@ -481,6 +624,7 @@ function NumberField({
   onChangeText,
   invalid,
   onHelpPress,
+  disabled,
 }: {
   label: string;
   kind: 'integer' | 'decimal';
@@ -490,10 +634,12 @@ function NumberField({
   invalid?: boolean;
   /** Given together with `invalid` when that case has an explanation to reveal. */
   onHelpPress?: () => void;
+  /** Shows the stored value without allowing a change. */
+  disabled?: boolean;
 }) {
   const isValid = kind === 'integer' ? isValidInteger : isValidDecimal;
   return (
-    <View style={styles.numberField}>
+    <View style={[styles.numberField, disabled && styles.numberFieldDisabled]}>
       <View style={styles.labelRow}>
         <Text style={styles.label}>{label}</Text>
         {invalid && onHelpPress && <ValidationHintButton onPress={onHelpPress} />}
@@ -501,6 +647,7 @@ function NumberField({
       <ValidatedInput
         style={styles.input}
         invalid={!isValid(value) || !!invalid}
+        editable={!disabled}
         value={value}
         onChangeText={onChangeText}
         keyboardType={kind === 'integer' ? 'number-pad' : 'decimal-pad'}
@@ -644,6 +791,9 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 8,
   },
+  numberFieldDisabled: {
+    opacity: 0.5,
+  },
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -686,6 +836,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingVertical: 9,
+  },
+  radioRowDisabled: {
+    opacity: 0.55,
   },
   radioOuter: {
     width: 22,

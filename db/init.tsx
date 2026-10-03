@@ -444,6 +444,69 @@ export async function createActivity(
   });
 }
 
+/**
+ * Applies an edit to an activity. With `stats`, the dialog's progression point is stored as
+ * a new session rather than overwriting history: confirmed on its own, or as this workout's
+ * recorded result when `confirm` is set, and whatever was already recorded for the activity
+ * in the open session is dropped. Without `stats` only the activity's own fields change, so
+ * a recorded session stays as it is. The activity type is never changed, because past
+ * sessions fill type-specific columns.
+ */
+export async function updateActivity(
+  db: SQLiteDatabase,
+  input: {
+    activityId: number;
+    customName: string;
+    customVideoLink: string | null;
+    minReps: number | null;
+    maxReps: number | null;
+    weightStep: number | null;
+    progressionPace: number | null;
+    confirm: boolean;
+    stats: { sets: number; reps: number | null; weight: number | null; time: number | null } | null;
+  }
+) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE activity
+          SET custom_name = ?, custom_video_link = ?, progression_pace = ?, min_reps = ?, max_reps = ?, weight_step = ?
+        WHERE id = ?`,
+      input.customName,
+      input.customVideoLink,
+      input.progressionPace,
+      input.minReps,
+      input.maxReps,
+      input.weightStep,
+      input.activityId
+    );
+
+    if (!input.stats) {
+      return;
+    }
+
+    await db.runAsync('DELETE FROM activity_stats WHERE activity_id = ? AND is_confirmed = 0', input.activityId);
+
+    const last = await db.getFirstAsync<{ max_no: number | null }>(
+      'SELECT MAX(no) AS max_no FROM activity_stats WHERE activity_id = ?',
+      input.activityId
+    );
+
+    await db.runAsync(
+      `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, outcome)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      input.activityId,
+      (last?.max_no ?? 0) + 1,
+      input.stats.sets,
+      input.stats.reps,
+      input.stats.weight,
+      input.stats.time,
+      new Date().toISOString(),
+      input.confirm ? 0 : 1,
+      input.confirm ? 'met' : null
+    );
+  });
+}
+
 export async function deleteDraftActivityStats(db: SQLiteDatabase, activityId: number) {
   await db.runAsync('DELETE FROM activity_stats WHERE activity_id = ? AND is_confirmed = 0', activityId);
 }

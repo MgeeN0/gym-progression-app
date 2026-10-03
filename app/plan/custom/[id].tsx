@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 
 import { useActiveWorkout } from '@/components/active-workout-provider';
-import { AddActivityModal } from '@/components/add-activity-modal';
+import { AddActivityModal, type EditableActivity } from '@/components/add-activity-modal';
 import { AddExerciseButton } from '@/components/add-exercise-button';
-import { ExerciseCard, type ExerciseCardActivity } from '@/components/exercise-card';
+import { ExerciseCard, type ExerciseCardActivity, type RecordedStats } from '@/components/exercise-card';
 import { TopBar } from '@/components/top-bar';
 import { WorkoutSummaryModal, type WorkoutSummaryEntry } from '@/components/workout-summary-modal';
 import { Colors } from '@/constants/theme';
@@ -52,10 +52,23 @@ type LastStatsRow = {
 
 type DraftRow = {
   activity_id: number;
+  sets_amount: number;
   reps_amount: number | null;
+  weight: number | null;
   time: number | null;
   outcome: string | null;
 };
+
+// The stored session, which after an edit saved with "Save & confirm" is the user's own
+// numbers rather than anything derivable from the goal.
+function toRecordedStats(mode: ProgressionMode, row: DraftRow): RecordedStats | null {
+  if (mode === 'time') {
+    return row.time === null ? null : { amount: row.time, load: row.sets_amount, sets: row.sets_amount };
+  }
+  return row.reps_amount === null || row.weight === null
+    ? null
+    : { amount: row.reps_amount, load: row.weight, sets: row.sets_amount };
+}
 
 // Time activities track seconds and sets; weight activities track reps and weight.
 function toLastStats(mode: ProgressionMode, row: LastStatsRow | null): ExerciseCardActivity['lastStats'] {
@@ -80,7 +93,10 @@ export default function CustomWorkoutPlanScreen() {
 
   const [planName, setPlanName] = useState('');
   const [activities, setActivities] = useState<ExerciseCardActivity[]>([]);
+  const [editable, setEditable] = useState<Record<number, EditableActivity>>({});
+  const [editing, setEditing] = useState<EditableActivity | null>(null);
   const [recordedOutcomes, setRecordedOutcomes] = useState<Record<number, ExerciseOutcome>>({});
+  const [recordedStats, setRecordedStats] = useState<Record<number, RecordedStats>>({});
   const [summaryEntries, setSummaryEntries] = useState<WorkoutSummaryEntry[] | null>(null);
   const [summaryDuration, setSummaryDuration] = useState('');
   const [addActivityVisible, setAddActivityVisible] = useState(false);
@@ -106,6 +122,9 @@ export default function CustomWorkoutPlanScreen() {
       planId
     );
 
+    const editPayloads: Record<number, EditableActivity> = {};
+    const modes: Record<number, ProgressionMode> = {};
+
     const withStats = await Promise.all(
       rows.map(async (row): Promise<ExerciseCardActivity> => {
         const fromExercise = row.exercise_id != null;
@@ -114,6 +133,27 @@ export default function CustomWorkoutPlanScreen() {
           'SELECT reps_amount, sets_amount, weight, time, no FROM activity_stats WHERE activity_id = ? AND is_confirmed = 1 ORDER BY no DESC LIMIT 1',
           row.id
         );
+
+        modes[row.id] = mode;
+        // Only custom activities carry their own editable fields; browser ones live in `exercise`.
+        if (!fromExercise) {
+          editPayloads[row.id] = {
+            id: row.id,
+            customName: row.custom_name ?? '',
+            customVideoLink: row.custom_video_link,
+            customType: mode,
+            minReps: row.min_reps,
+            maxReps: row.max_reps,
+            weightStep: row.weight_step,
+            progressionPace: row.progression_pace,
+            last: {
+              sets: lastStats?.sets_amount ?? 1,
+              reps: lastStats?.reps_amount ?? null,
+              weight: lastStats?.weight ?? null,
+              time: lastStats?.time ?? null,
+            },
+          };
+        }
 
         return {
           id: row.id,
@@ -130,21 +170,28 @@ export default function CustomWorkoutPlanScreen() {
     );
 
     setActivities(withStats);
+    setEditable(editPayloads);
 
     // Rebuild card states from any drafts of this plan's activities (e.g. a restored session).
     const drafts = await db.getAllAsync<DraftRow>(
-      'SELECT activity_id, reps_amount, time, outcome FROM activity_stats WHERE is_confirmed = 0'
+      'SELECT activity_id, sets_amount, reps_amount, weight, time, outcome FROM activity_stats WHERE is_confirmed = 0'
     );
     const outcomes: Record<number, ExerciseOutcome> = {};
+    const stats: Record<number, RecordedStats> = {};
     for (const draft of drafts) {
       const activity = withStats.find((item) => item.id === draft.activity_id);
       if (activity?.lastStats) {
         const goal = computeGoal(activity.mode, activity.lastStats, activity);
         const recordedAmount = activity.mode === 'time' ? draft.time : draft.reps_amount;
         outcomes[activity.id] = restoreOutcome(draft.outcome, goal, recordedAmount ?? goal.amount);
+        const recorded = toRecordedStats(activity.mode, draft);
+        if (recorded) {
+          stats[activity.id] = recorded;
+        }
       }
     }
     setRecordedOutcomes(outcomes);
+    setRecordedStats(stats);
   }, [db, planId]);
 
   useFocusEffect(
@@ -170,8 +217,13 @@ export default function CustomWorkoutPlanScreen() {
       if (!outcome || !activity.lastStats) {
         continue;
       }
-      const recorded = computeRecordedStats(activity.mode, activity.lastStats, activity, outcome);
-      const afterSets = activity.mode === 'time' ? recorded.load : activity.lastStats.sets;
+      const stored = recordedStats[activity.id];
+      const recorded = stored ?? computeRecordedStats(activity.mode, activity.lastStats, activity, outcome);
+      const afterSets = stored
+        ? stored.sets
+        : activity.mode === 'time'
+          ? recorded.load
+          : activity.lastStats.sets;
       entries.push({
         activityId: activity.id,
         name: activity.displayName,
@@ -181,10 +233,11 @@ export default function CustomWorkoutPlanScreen() {
     }
 
     setRecordedOutcomes({});
+    setRecordedStats({});
     setSummaryDuration(formatElapsed(durationSeconds));
     setSummaryEntries(entries);
     await refreshActiveWorkout();
-  }, [db, planId, activeWorkout, activities, recordedOutcomes, refreshActiveWorkout]);
+  }, [db, planId, activeWorkout, activities, recordedOutcomes, recordedStats, refreshActiveWorkout]);
 
   const handleSummaryConfirm = useCallback(() => {
     setSummaryEntries(null);
@@ -200,6 +253,7 @@ export default function CustomWorkoutPlanScreen() {
         onPress: async () => {
           await discardUnfinishedWorkout(db);
           setRecordedOutcomes({});
+          setRecordedStats({});
           await refreshActiveWorkout();
           router.dismissTo('/');
         },
@@ -215,6 +269,7 @@ export default function CustomWorkoutPlanScreen() {
       }
 
       const isTime = activity.mode === 'time';
+      const lastSets = activity.lastStats.sets;
       const recorded = computeRecordedStats(activity.mode, activity.lastStats, activity, outcome);
       await recordActivityProgress(db, {
         activity_id: activityId,
@@ -235,6 +290,10 @@ export default function CustomWorkoutPlanScreen() {
       );
 
       setRecordedOutcomes((prev) => ({ ...prev, [activityId]: outcome }));
+      setRecordedStats((prev) => ({
+        ...prev,
+        [activityId]: { amount: recorded.amount, load: recorded.load, sets: isTime ? recorded.load : lastSets },
+      }));
     },
     [db, activities]
   );
@@ -243,6 +302,11 @@ export default function CustomWorkoutPlanScreen() {
     async (activityId: number) => {
       await deleteDraftActivityStats(db, activityId);
       setRecordedOutcomes((prev) => {
+        const next = { ...prev };
+        delete next[activityId];
+        return next;
+      });
+      setRecordedStats((prev) => {
         const next = { ...prev };
         delete next[activityId];
         return next;
@@ -279,16 +343,25 @@ export default function CustomWorkoutPlanScreen() {
             activity={activity}
             sessionActive={sessionActive}
             outcome={recordedOutcomes[activity.id]}
+            recorded={recordedStats[activity.id]}
             onRecordOutcome={(outcome) => handleRecordOutcome(activity.id, outcome)}
             onUndo={() => handleUndo(activity.id)}
+            onEdit={editable[activity.id] ? () => setEditing(editable[activity.id]) : undefined}
           />
         ))}
       </ScrollView>
 
+      {/* Keyed per activity so the form state is seeded from whichever one is opened. */}
       <AddActivityModal
-        visible={addActivityVisible}
+        key={editing ? `edit-${editing.id}` : 'create'}
+        visible={addActivityVisible || editing !== null}
         planId={planId}
-        onClose={() => setAddActivityVisible(false)}
+        editing={editing}
+        sessionActive={sessionActive}
+        onClose={() => {
+          setAddActivityVisible(false);
+          setEditing(null);
+        }}
         onSaved={loadActivities}
       />
 
