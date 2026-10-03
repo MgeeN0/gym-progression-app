@@ -6,7 +6,7 @@ import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 
 import { KeyboardDoneBar } from '@/components/keyboard-done-bar';
 import { RangeSlider } from '@/components/range-slider';
-import { ValidatedInput, ValidationMessage } from '@/components/validated-input';
+import { ValidatedInput, ValidationHintButton, ValidationMessage } from '@/components/validated-input';
 import { Colors, Radii } from '@/constants/theme';
 import { createActivity } from '@/db/init';
 import {
@@ -107,6 +107,18 @@ export function AddActivityModal({
   const startTimeOutOfRange =
     isTime && !rangeHidden && filled(startTime, isValidDecimal) && outsideRange(startTime);
   const rangeError = `Starting point can not be outside of ${isTime ? 'time' : 'reps'} range`;
+  const rangeInvalid = startRepsOutOfRange || startTimeOutOfRange;
+
+  // The explanation is asked for, never pushed: it would otherwise pop up halfway through
+  // typing a number. The error clearing also forgets the tap, so the next mistake starts
+  // hidden again rather than behaving like a toggle. Reset during render rather than in an
+  // effect, which the compiler's lint rules disallow.
+  const [rangeHelpShown, setRangeHelpShown] = useState(false);
+  const [helpWasInvalid, setHelpWasInvalid] = useState(rangeInvalid);
+  if (helpWasInvalid !== rangeInvalid) {
+    setHelpWasInvalid(rangeInvalid);
+    setRangeHelpShown(false);
+  }
 
   // Only the fields visible for the current type and options have to be filled in.
   const canSave =
@@ -258,6 +270,7 @@ export function AddActivityModal({
                         value={startReps}
                         onChangeText={setStartReps}
                         invalid={startRepsOutOfRange}
+                        onHelpPress={() => setRangeHelpShown(true)}
                       />
                     )}
                     <NumberField label="Sets" kind="integer" value={startSets} onChangeText={setStartSets} />
@@ -268,6 +281,7 @@ export function AddActivityModal({
                         value={startTime}
                         onChangeText={setStartTime}
                         invalid={startTimeOutOfRange}
+                        onHelpPress={() => setRangeHelpShown(true)}
                       />
                     ) : (
                       <NumberField
@@ -279,9 +293,7 @@ export function AddActivityModal({
                     )}
                   </View>
 
-                  {(startRepsOutOfRange || startTimeOutOfRange) && (
-                    <ValidationMessage>{rangeError}</ValidationMessage>
-                  )}
+                  {rangeInvalid && rangeHelpShown && <ValidationMessage>{rangeError}</ValidationMessage>}
 
                   {!rangeHidden && (
                     <View style={styles.field}>
@@ -468,6 +480,7 @@ function NumberField({
   value,
   onChangeText,
   invalid,
+  onHelpPress,
 }: {
   label: string;
   kind: 'integer' | 'decimal';
@@ -475,11 +488,16 @@ function NumberField({
   onChangeText: (value: string) => void;
   /** Set when something outside the field's own format makes the value wrong. */
   invalid?: boolean;
+  /** Given together with `invalid` when that case has an explanation to reveal. */
+  onHelpPress?: () => void;
 }) {
   const isValid = kind === 'integer' ? isValidInteger : isValidDecimal;
   return (
     <View style={styles.numberField}>
-      <Text style={styles.label}>{label}</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>{label}</Text>
+        {invalid && onHelpPress && <ValidationHintButton onPress={onHelpPress} />}
+      </View>
       <ValidatedInput
         style={styles.input}
         invalid={!isValid(value) || !!invalid}
@@ -625,6 +643,11 @@ const styles = StyleSheet.create({
   numberField: {
     flex: 1,
     gap: 8,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   progressRow: {
     flexDirection: 'row',
