@@ -369,6 +369,7 @@ export default function CustomWorkoutPlanScreen() {
             onUndo={() => handleUndo(activity.id)}
             onEdit={editable[activity.id] ? () => setEditing(editable[activity.id]) : undefined}
             onDelete={() => handleDelete(activity.id)}
+            onStats={() => router.push({ pathname: '/activity/[id]', params: { id: activity.id } })}
           />
         ))}
       </ScrollView>

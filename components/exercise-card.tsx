@@ -73,6 +73,7 @@ export function ExerciseCard({
   onUndo,
   onEdit,
   onDelete,
+  onStats,
 }: {
   activity: ExerciseCardActivity;
   sessionActive: boolean;
@@ -82,6 +83,7 @@ export function ExerciseCard({
   onUndo: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onStats?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [picker, setPicker] = useState<PickerKind | null>(null);
@@ -245,7 +247,7 @@ export function ExerciseCard({
                 </View>
 
                 <View style={styles.linkShadow}>
-                  <Pressable style={styles.linkButton}>
+                  <Pressable style={styles.linkButton} onPress={onStats} disabled={!onStats}>
                     <LinearGradient
                       colors={[Colors.accentEnd, Colors.accentStart]}
                       start={[0, 0]}
