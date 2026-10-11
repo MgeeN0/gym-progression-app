@@ -141,7 +141,7 @@ export function restoreOutcome(
 }
 
 function signed(value: number) {
-  return `${value > 0 ? '+' : '-'}${Math.abs(value)}`;
+  return `${value >= 0 ? '+' : '-'}${Math.abs(value)}`;
 }
 
 function plural(value: number) {
@@ -153,7 +153,9 @@ export function formatGoalChange(mode: ProgressionMode, goal: ProgressionGoal) {
   if (goal.loadDelta !== 0) {
     parts.push(mode === 'time' ? `${signed(goal.loadDelta)} set${plural(goal.loadDelta)}` : `${signed(goal.loadDelta)} kg`);
   }
-  if (goal.amountDelta !== 0) {
+  // A fractional pace leaves sessions with no increase at all, which is still worth
+  // stating as "+0" rather than leaving the goal with nothing beside it.
+  if (goal.amountDelta !== 0 || parts.length === 0) {
     parts.push(mode === 'time' ? `${signed(goal.amountDelta)} s` : `${signed(goal.amountDelta)} rep${plural(goal.amountDelta)}`);
   }
   return parts.join(', ');

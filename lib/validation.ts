@@ -27,6 +27,11 @@ export function isValidDecimal(value: string) {
   return value === '' || DECIMAL.test(value);
 }
 
+/** For decimals that have to move something, such as a weight step: 0 would never progress. */
+export function isValidPositiveDecimal(value: string) {
+  return value === '' || (DECIMAL.test(value) && parseDecimal(value) > 0);
+}
+
 export function isValidYoutubeLink(value: string) {
   return value === '' || YOUTUBE_LINK.test(value);
 }

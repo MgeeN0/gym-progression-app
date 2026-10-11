@@ -13,6 +13,7 @@ import {
   isValidDecimal,
   isValidInteger,
   isValidName,
+  isValidPositiveDecimal,
   isValidYoutubeLink,
   normalizeYoutubeLink,
   parseDecimal,
@@ -69,7 +70,7 @@ function numberText(value: number | null | undefined, fallback: string) {
 /**
  * Rebuilds the checkbox states from the stored columns: a pace of 0 means auto progress was
  * off, a pinned range (min === max) means weight-only, and a missing range means locked sets.
- * A 0 kg weight step would be indistinguishable from "off", which validation will rule out.
+ * A 0 kg weight step would be indistinguishable from "off", which validation rules out.
  */
 function storedOptions(editing: EditableActivity | null) {
   if (!editing) {
@@ -204,7 +205,7 @@ export function AddActivityModal({
   const canSave =
     canContinue &&
     (!statsEditable || statsValid) &&
-    (isTime || noAutoProgress || filled(weightStep, isValidDecimal));
+    (isTime || noAutoProgress || filled(weightStep, isValidPositiveDecimal));
 
   const close = () => {
     onClose();
@@ -447,7 +448,7 @@ export function AddActivityModal({
                           <Text style={styles.label}>Weight step</Text>
                           <ValidatedInput
                             style={styles.input}
-                            invalid={!isValidDecimal(weightStep)}
+                            invalid={!isValidPositiveDecimal(weightStep)}
                             value={weightStep}
                             onChangeText={setWeightStep}
                             keyboardType="decimal-pad"

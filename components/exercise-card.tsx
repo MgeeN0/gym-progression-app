@@ -88,6 +88,8 @@ export function ExerciseCard({
   const [actionsLayout, setActionsLayout] = useState<LayoutRectangle | null>(null);
 
   const isTime = activity.mode === 'time';
+  // With auto progress off there is no goal to meet, only the stats to repeat.
+  const autoProgress = (activity.progressionPace ?? 0) !== 0;
   const goal = activity.lastStats ? computeGoal(activity.mode, activity.lastStats, activity) : null;
   const goalChange = goal ? formatGoalChange(activity.mode, goal) : '';
   const lessAmounts = goal ? getLessAmounts(goal.amount, goal.amountDelta) : [];
@@ -178,9 +180,13 @@ export function ExerciseCard({
 
           {expanded && (
             <View style={styles.body}>
-              <Text style={styles.goalLabel}>
-                {goal ? `Goal${goalChange ? ` (${goalChange})` : ''}:` : 'No previous training yet'}
-              </Text>
+              {!goal ? (
+                <Text style={styles.goalLabel}>No previous training yet</Text>
+              ) : (
+                autoProgress && (
+                  <Text style={styles.goalLabel}>{`Goal${goalChange ? ` (${goalChange})` : ''}:`}</Text>
+                )
+              )}
 
               <View style={styles.statsRow}>
                 <StatPill
