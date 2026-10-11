@@ -8,7 +8,7 @@ export type Plan = {
   note: string | null;
 };
 
-const CURRENT_DB_VERSION = 15;
+const CURRENT_DB_VERSION = 16;
 
 async function recordUpgrade(db: SQLiteDatabase, upgradeNumber: number) {
   await db.runAsync(
@@ -221,6 +221,20 @@ ALTER TABLE activity_new RENAME TO activity;
   await recordUpgrade(db, 15);
 }
 
+/**
+ * Where a stats row came from: 0 for a training, whether recorded with the progress
+ * buttons or with "Save & confirm" on an edit, and 1 for an edit saved with "Save".
+ * The activity's first row (no = 1) is its starting point.
+ */
+export const DATA_SOURCE = { training: 0, edit: 1 } as const;
+
+async function upgrade16_addDataSourceToActivityStats(db: SQLiteDatabase) {
+  await db.execAsync(`
+ALTER TABLE activity_stats ADD COLUMN data_source INTEGER NOT NULL DEFAULT 0;
+`);
+  await recordUpgrade(db, 16);
+}
+
 const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[] = [
   { number: 1, run: upgrade1_createExerciseTable },
   { number: 2, run: upgrade2_createActivityTable },
@@ -237,6 +251,7 @@ const upgrades: { number: number; run: (db: SQLiteDatabase) => Promise<void> }[]
   { number: 13, run: upgrade13_addTimeToActivityStats },
   { number: 14, run: upgrade14_addOutcomeToActivityStats },
   { number: 15, run: upgrade15_makeProgressionPaceReal },
+  { number: 16, run: upgrade16_addDataSourceToActivityStats },
 ];
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
@@ -388,8 +403,8 @@ export async function recordActivityProgress(
   }
 ) {
   await db.runAsync(
-    `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, outcome)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, outcome, data_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     entry.activity_id,
     entry.no,
     entry.sets_amount,
@@ -397,7 +412,8 @@ export async function recordActivityProgress(
     entry.weight,
     entry.time,
     new Date().toISOString(),
-    entry.outcome
+    entry.outcome,
+    DATA_SOURCE.training
   );
 }
 
@@ -432,14 +448,15 @@ export async function createActivity(
 
     // The starting point is confirmed history, not a draft, so the first goal can build on it.
     await db.runAsync(
-      `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed)
-       VALUES (?, 1, ?, ?, ?, ?, ?, 1)`,
+      `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, data_source)
+       VALUES (?, 1, ?, ?, ?, ?, ?, 1, ?)`,
       activity.lastInsertRowId,
       input.start.sets,
       input.start.reps,
       input.start.weight,
       input.start.time,
-      new Date().toISOString()
+      new Date().toISOString(),
+      DATA_SOURCE.training
     );
   });
 }
@@ -492,8 +509,8 @@ export async function updateActivity(
     );
 
     await db.runAsync(
-      `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, outcome)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO activity_stats (activity_id, no, sets_amount, reps_amount, weight, time, date, is_confirmed, outcome, data_source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.activityId,
       (last?.max_no ?? 0) + 1,
       input.stats.sets,
@@ -502,7 +519,8 @@ export async function updateActivity(
       input.stats.time,
       new Date().toISOString(),
       input.confirm ? 0 : 1,
-      input.confirm ? 'met' : null
+      input.confirm ? 'met' : null,
+      input.confirm ? DATA_SOURCE.training : DATA_SOURCE.edit
     );
   });
 }

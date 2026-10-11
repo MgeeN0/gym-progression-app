@@ -7,6 +7,7 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { type ChartPoint, ProgressChart } from '@/components/progress-chart';
 import { TopBar } from '@/components/top-bar';
 import { Colors, Radii } from '@/constants/theme';
+import { DATA_SOURCE } from '@/db/init';
 import { type ProgressionMode } from '@/lib/progression';
 import { formatDateTime } from '@/lib/time';
 
@@ -17,7 +18,44 @@ type SessionRow = {
   reps_amount: number | null;
   weight: number | null;
   time: number | null;
+  data_source: number;
 };
+
+const EDIT_COLOR = '#F2C14E';
+const START_COLOR = '#22C55E';
+
+/** A soft halo in the row's own colour, kept subtle so a long history stays calm. */
+function glow(color: string) {
+  return Platform.select({
+    ios: {
+      shadowColor: color,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.3,
+      shadowRadius: 6,
+    },
+    android: { elevation: 4 },
+    web: { boxShadow: `0 0 9px ${color}4D` },
+  });
+}
+
+/**
+ * Not every row is a training: the first one is the activity's starting point, and an
+ * edit saved with "Save" adds one of its own.
+ */
+function sessionKind(session: SessionRow) {
+  if (session.no === 1) {
+    return 'start' as const;
+  }
+  return session.data_source === DATA_SOURCE.edit ? ('edit' as const) : ('training' as const);
+}
+
+function sessionLabel(session: SessionRow) {
+  const kind = sessionKind(session);
+  if (kind === 'start') {
+    return 'Starting point';
+  }
+  return kind === 'edit' ? 'Activity edit' : `Training ${session.no}`;
+}
 
 export default function ActivityStatsScreen() {
   const router = useRouter();
@@ -50,7 +88,7 @@ export default function ActivityStatsScreen() {
     // Confirmed history only: a draft belongs to a workout that is still running.
     setSessions(
       await db.getAllAsync<SessionRow>(
-        `SELECT no, date, sets_amount, reps_amount, weight, time
+        `SELECT no, date, sets_amount, reps_amount, weight, time, data_source
          FROM activity_stats
          WHERE activity_id = ? AND is_confirmed = 1
          ORDER BY no`,
@@ -77,7 +115,11 @@ export default function ActivityStatsScreen() {
 
   const isTime = mode === 'time';
   const chartPoints: ChartPoint[] = sessions
-    .map((session) => ({ no: session.no, value: isTime ? session.time : session.weight, date: session.date }))
+    .map((session) => ({
+      label: sessionLabel(session),
+      value: isTime ? session.time : session.weight,
+      date: session.date,
+    }))
     .filter((point): point is ChartPoint => point.value !== null);
 
   return (
@@ -105,13 +147,17 @@ export default function ActivityStatsScreen() {
 }
 
 function SessionCard({ session, isTime }: { session: SessionRow; isTime: boolean }) {
+  const kind = sessionKind(session);
+  const tone = kind === 'edit' ? styles.editCard : kind === 'start' ? styles.startCard : null;
+  const badgeTone = kind === 'edit' ? EDIT_COLOR : kind === 'start' ? START_COLOR : Colors.accentEnd;
+
   return (
-    <View style={styles.sessionCard}>
+    <View style={[styles.sessionCard, tone]}>
       <View style={styles.sessionHeader}>
-        <View style={styles.sessionBadge}>
-          <Text style={styles.sessionBadgeLabel}>{session.no}</Text>
+        <View style={[styles.sessionBadge, { borderColor: `${badgeTone}80` }]}>
+          <Text style={[styles.sessionBadgeLabel, { color: badgeTone }]}>{session.no}</Text>
         </View>
-        <Text style={styles.sessionTitle}>Training {session.no}</Text>
+        <Text style={styles.sessionTitle}>{sessionLabel(session)}</Text>
         <Text style={styles.sessionDate}>{formatDateTime(session.date)}</Text>
       </View>
 
@@ -181,6 +227,16 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     alignItems: 'center',
+  },
+  editCard: {
+    borderColor: EDIT_COLOR,
+    borderWidth: 1.5,
+    ...glow(EDIT_COLOR),
+  },
+  startCard: {
+    borderColor: START_COLOR,
+    borderWidth: 1.5,
+    ...glow(START_COLOR),
   },
   sessionHeader: {
     flexDirection: 'row',

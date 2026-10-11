@@ -29,7 +29,7 @@ const TOOLTIP_HEIGHT = 68;
 const TAP_RADIUS = 48;
 
 /** One session on the chart: the value plotted, plus what the tooltip needs. */
-export type ChartPoint = { no: number; value: number; date: string };
+export type ChartPoint = { label: string; value: number; date: string };
 
 type Plot = {
   points: { x: number; y: number }[];
@@ -259,7 +259,7 @@ export function ProgressChart({
                 ]}
                 pointerEvents="none"
               >
-                <Text style={styles.tooltipTitle}>Training {selectedSession.no}</Text>
+                <Text style={styles.tooltipTitle}>{selectedSession.label}</Text>
                 <Text style={styles.tooltipValue}>
                   {selectedSession.value} {unit}
                 </Text>
