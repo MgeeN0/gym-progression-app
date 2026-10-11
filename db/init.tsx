@@ -525,6 +525,36 @@ export async function updateActivity(
   });
 }
 
+/**
+ * Wipes an activity's history except its newest confirmed session, which is renumbered to
+ * become the activity's starting point. A session being recorded in an open workout is
+ * kept: that newest confirmed row is exactly the baseline it was recorded against, so it
+ * only has to follow the renumbered baseline again.
+ */
+export async function clearActivityHistory(db: SQLiteDatabase, activityId: number) {
+  await db.withTransactionAsync(async () => {
+    const latest = await db.getFirstAsync<{ id: number }>(
+      'SELECT id FROM activity_stats WHERE activity_id = ? AND is_confirmed = 1 ORDER BY no DESC LIMIT 1',
+      activityId
+    );
+    if (!latest) {
+      return;
+    }
+
+    await db.runAsync(
+      'DELETE FROM activity_stats WHERE activity_id = ? AND id != ? AND is_confirmed = 1',
+      activityId,
+      latest.id
+    );
+    await db.runAsync(
+      'UPDATE activity_stats SET no = 1, outcome = NULL, data_source = ? WHERE id = ?',
+      DATA_SOURCE.training,
+      latest.id
+    );
+    await db.runAsync('UPDATE activity_stats SET no = 2 WHERE activity_id = ? AND is_confirmed = 0', activityId);
+  });
+}
+
 /** Removes an activity with its whole progress history, drafts included. */
 export async function deleteActivity(db: SQLiteDatabase, activityId: number) {
   await db.withTransactionAsync(async () => {

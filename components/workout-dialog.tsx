@@ -18,6 +18,7 @@ export function WorkoutDialog({
   primaryLabel,
   onPrimary,
   danger,
+  tone = 'default',
   onRequestClose,
 }: {
   visible: boolean;
@@ -27,18 +28,17 @@ export function WorkoutDialog({
   primaryLabel: string;
   onPrimary: () => void;
   danger?: { label: string; icon: IconName; onPress: () => void };
-  onRequestClose: () => void;
+  /** 'danger' outlines the card in red, for a destructive confirmation. */
+  tone?: 'default' | 'danger';
+  onRequestClose?: () => void;
 }) {
+  const outlineColors: [string, string] =
+    tone === 'danger' ? [DANGER_COLOR, DANGER_COLOR] : [Colors.accentStart, Colors.accentEnd];
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onRequestClose}>
       <View style={styles.backdrop}>
-        <View style={styles.shadowWrapper}>
-          <LinearGradient
-            colors={[Colors.accentStart, Colors.accentEnd]}
-            start={[0, 0]}
-            end={[1, 1]}
-            style={styles.outline}
-          >
+        <View style={[styles.shadowWrapper, tone === 'danger' && styles.shadowWrapperDanger]}>
+          <LinearGradient colors={outlineColors} start={[0, 0]} end={[1, 1]} style={styles.outline}>
             <View style={styles.card}>
               <MaterialCommunityIcons name={icon} size={36} color={iconColor} />
               <Text style={styles.message}>{message}</Text>
@@ -92,6 +92,12 @@ const styles = StyleSheet.create({
       },
       android: { elevation: 12 },
       web: { boxShadow: `0 10px 36px -6px ${Colors.accentStart}99` },
+    }),
+  },
+  shadowWrapperDanger: {
+    ...Platform.select({
+      ios: { shadowColor: DANGER_COLOR, shadowOpacity: 0.35 },
+      web: { boxShadow: `0 10px 36px -6px ${DANGER_COLOR}99` },
     }),
   },
   outline: {

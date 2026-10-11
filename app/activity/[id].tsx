@@ -6,8 +6,9 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { type ChartPoint, ProgressChart } from '@/components/progress-chart';
 import { TopBar } from '@/components/top-bar';
+import { WorkoutDialog } from '@/components/workout-dialog';
 import { Colors, Radii } from '@/constants/theme';
-import { DATA_SOURCE } from '@/db/init';
+import { clearActivityHistory, DATA_SOURCE } from '@/db/init';
 import { type ProgressionMode } from '@/lib/progression';
 import { formatDateTime } from '@/lib/time';
 
@@ -23,6 +24,7 @@ type SessionRow = {
 
 const EDIT_COLOR = '#F2C14E';
 const START_COLOR = '#22C55E';
+const DANGER_COLOR = '#FF4D4F';
 
 /** A soft halo in the row's own colour, kept subtle so a long history stays calm. */
 function glow(color: string) {
@@ -67,6 +69,7 @@ export default function ActivityStatsScreen() {
   const [name, setName] = useState('');
   const [mode, setMode] = useState<ProgressionMode>('weight');
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [clearVisible, setClearVisible] = useState(false);
 
   const load = useCallback(async () => {
     const activity = await db.getFirstAsync<{
@@ -107,11 +110,35 @@ export default function ActivityStatsScreen() {
     router.back();
   }, [router]);
 
+  const handleClearRequest = useCallback(() => {
+    setClearVisible(true);
+  }, []);
+
+  const handleClear = useCallback(async () => {
+    await clearActivityHistory(db, activityId);
+    setClearVisible(false);
+    await load();
+  }, [db, activityId, load]);
+
+  // Nothing to clear when the newest session is the only one there is.
+  const canClear = sessions.length > 1;
+
   useEffect(() => {
     navigation.setOptions({
-      header: () => <TopBar title={name} leftAction={{ icon: 'arrow-left', onPress: handleGoBack }} />,
+      header: () => (
+        <TopBar
+          title={name}
+          leftAction={{ icon: 'arrow-left', onPress: handleGoBack }}
+          rightAction={{
+            icon: 'trash-can-outline',
+            onPress: handleClearRequest,
+            tone: 'danger',
+            disabled: !canClear,
+          }}
+        />
+      ),
     });
-  }, [navigation, name, handleGoBack]);
+  }, [navigation, name, handleGoBack, handleClearRequest, canClear]);
 
   const isTime = mode === 'time';
   const chartPoints: ChartPoint[] = sessions
@@ -142,6 +169,21 @@ export default function ActivityStatsScreen() {
           <SessionCard key={session.no} session={session} isTime={isTime} />
         ))}
       </ScrollView>
+
+      <WorkoutDialog
+        visible={clearVisible}
+        tone="danger"
+        icon="alert-octagon-outline"
+        iconColor={DANGER_COLOR}
+        message={
+          'Are you sure you want to remove entire workout history for this activity? ' +
+          'Last workout record will not be removed.'
+        }
+        primaryLabel="No"
+        onPrimary={() => setClearVisible(false)}
+        danger={{ label: 'Yes', icon: 'trash-can-outline', onPress: handleClear }}
+        onRequestClose={() => setClearVisible(false)}
+      />
     </View>
   );
 }
