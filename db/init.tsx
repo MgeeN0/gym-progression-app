@@ -340,6 +340,18 @@ export async function getActiveWorkout(db: SQLiteDatabase) {
   );
 }
 
+/** The plan of the most recently finished workout, for the "recent" marker on its card. */
+export async function getLastTrainedPlanId(db: SQLiteDatabase) {
+  const row = await db.getFirstAsync<{ plan_id: number }>(
+    `SELECT plan_id
+     FROM workout_history
+     WHERE workout_time IS NOT NULL
+     ORDER BY start_timestamp DESC, id DESC
+     LIMIT 1`
+  );
+  return row?.plan_id ?? null;
+}
+
 export async function finishWorkout(db: SQLiteDatabase, workoutId: number, workoutTime: number) {
   await db.withTransactionAsync(async () => {
     await db.runAsync('UPDATE activity_stats SET is_confirmed = 1 WHERE is_confirmed = 0');

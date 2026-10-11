@@ -7,7 +7,9 @@ import { PLAN_TYPES } from '@/constants/plan-types';
 import { Colors, Radii } from '@/constants/theme';
 import { type Plan } from '@/db/init';
 
-export function PlanCard({ plan }: { plan: Plan }) {
+const RECENT_COLOR = '#2F86FF';
+
+export function PlanCard({ plan, recent }: { plan: Plan; recent?: boolean }) {
   const router = useRouter();
 
   const handlePress = () => {
@@ -30,6 +32,12 @@ export function PlanCard({ plan }: { plan: Plan }) {
           <View style={styles.imagePlaceholder}>
             <MaterialCommunityIcons name="image-outline" size={28} color={Colors.textSecondary} />
           </View>
+          {/* Marks the plan of the most recently finished workout. */}
+          {recent && (
+            <View style={styles.recentBadge}>
+              <MaterialCommunityIcons name="clock-outline" size={20} color={RECENT_COLOR} />
+            </View>
+          )}
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>
               {plan.plan_name}
@@ -91,6 +99,27 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
     gap: 6,
+  },
+  recentBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: Radii.pill,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.shadowDark,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.6,
+        shadowRadius: 6,
+      },
+      android: { elevation: 6 },
+      web: { boxShadow: `0 3px 8px ${Colors.shadowDark}CC` },
+    }),
   },
   name: {
     color: Colors.textPrimary,

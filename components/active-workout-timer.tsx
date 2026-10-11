@@ -1,8 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { usePathname } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type ActiveWorkout, useActiveWorkout } from '@/components/active-workout-provider';
@@ -15,6 +15,7 @@ const RAISED_PATHS = ['/add-plan'];
 export function ActiveWorkoutTimer() {
   const { activeWorkout } = useActiveWorkout();
   const pathname = usePathname();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   if (!activeWorkout) {
@@ -24,15 +25,35 @@ export function ActiveWorkoutTimer() {
   const onOwnPlanScreen = pathname === `/plan/custom/${activeWorkout.planId}`;
   const bottom = insets.bottom + (RAISED_PATHS.includes(pathname) ? 104 : 24);
 
+  // Elsewhere in the app the badge is the way back to the workout in progress. navigate
+  // rather than push, so returning reuses that screen instead of stacking another copy.
+  const handlePress = () => {
+    router.navigate(`/plan/custom/${activeWorkout.planId}`);
+  };
+
   return (
-    <View style={[styles.wrapper, { bottom }]} pointerEvents="none">
+    // box-none: the bar itself stays transparent to touches, the badge inside does not.
+    <View style={[styles.wrapper, { bottom }]} pointerEvents="box-none">
       {/* Keyed by workout so the elapsed time is initialised fresh for each workout. */}
-      <TimerBadge key={activeWorkout.id} workout={activeWorkout} showPlanName={!onOwnPlanScreen} />
+      <TimerBadge
+        key={activeWorkout.id}
+        workout={activeWorkout}
+        showPlanName={!onOwnPlanScreen}
+        onPress={onOwnPlanScreen ? undefined : handlePress}
+      />
     </View>
   );
 }
 
-function TimerBadge({ workout, showPlanName }: { workout: ActiveWorkout; showPlanName: boolean }) {
+function TimerBadge({
+  workout,
+  showPlanName,
+  onPress,
+}: {
+  workout: ActiveWorkout;
+  showPlanName: boolean;
+  onPress?: () => void;
+}) {
   const [elapsed, setElapsed] = useState(() => secondsSince(workout.startedAt));
 
   useEffect(() => {
@@ -43,7 +64,11 @@ function TimerBadge({ workout, showPlanName }: { workout: ActiveWorkout; showPla
   const time = formatElapsed(elapsed);
 
   return (
-    <View style={styles.shadow}>
+    <Pressable
+      style={({ pressed }) => [styles.shadow, pressed && onPress && styles.pressed]}
+      onPress={onPress}
+      disabled={!onPress}
+    >
       <LinearGradient
         colors={[Colors.accentStart, Colors.accentEnd]}
         start={[0, 0]}
@@ -55,7 +80,7 @@ function TimerBadge({ workout, showPlanName }: { workout: ActiveWorkout; showPla
           {showPlanName ? `${workout.planName}: ${time}` : time}
         </Text>
       </LinearGradient>
-    </View>
+    </Pressable>
   );
 }
 
@@ -79,6 +104,10 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
       web: { boxShadow: `0 6px 18px -2px ${Colors.accentStart}80` },
     }),
+  },
+  pressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
   },
   badge: {
     flexDirection: 'row',

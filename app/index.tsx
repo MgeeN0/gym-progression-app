@@ -6,15 +6,20 @@ import { useFocusEffect } from 'expo-router';
 import { AddPlanCard } from '@/components/add-plan-card';
 import { PlanCard } from '@/components/plan-card';
 import { Colors } from '@/constants/theme';
-import { type Plan } from '@/db/init';
+import { getLastTrainedPlanId, type Plan } from '@/db/init';
 
 export default function Page() {
   const db = useSQLiteContext();
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [lastTrainedPlanId, setLastTrainedPlanId] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      db.getAllAsync<Plan>('SELECT * FROM plan ORDER BY id').then(setPlans);
+      const load = async () => {
+        setPlans(await db.getAllAsync<Plan>('SELECT * FROM plan ORDER BY id'));
+        setLastTrainedPlanId(await getLastTrainedPlanId(db));
+      };
+      load();
     }, [db])
   );
 
@@ -24,7 +29,7 @@ export default function Page() {
       <View style={styles.headingRule} />
 
       {plans.map((plan) => (
-        <PlanCard key={plan.id} plan={plan} />
+        <PlanCard key={plan.id} plan={plan} recent={plan.id === lastTrainedPlanId} />
       ))}
 
       <AddPlanCard />
