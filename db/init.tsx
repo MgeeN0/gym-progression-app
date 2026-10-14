@@ -283,6 +283,25 @@ CREATE TABLE IF NOT EXISTS upgrade (
   }
 }
 
+/** Removes plans with every activity under them and all of their recorded sessions. */
+export async function deletePlans(db: SQLiteDatabase, planIds: number[]) {
+  if (planIds.length === 0) {
+    return;
+  }
+  // Only the placeholders are built into the SQL; the ids themselves stay bound.
+  const placeholders = planIds.map(() => '?').join(', ');
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `DELETE FROM activity_stats
+        WHERE activity_id IN (SELECT id FROM activity WHERE plan_id IN (${placeholders}))`,
+      ...planIds
+    );
+    await db.runAsync(`DELETE FROM activity WHERE plan_id IN (${placeholders})`, ...planIds);
+    await db.runAsync(`DELETE FROM plan WHERE id IN (${placeholders})`, ...planIds);
+  });
+}
+
 /** Returns the new plan's id, so the caller can open it. */
 export async function createPlan(db: SQLiteDatabase, plan: Omit<Plan, 'id'>) {
   const result = await db.runAsync(

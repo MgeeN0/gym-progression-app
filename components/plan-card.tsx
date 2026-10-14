@@ -8,11 +8,29 @@ import { Colors, Radii } from '@/constants/theme';
 import { type Plan } from '@/db/init';
 
 const RECENT_COLOR = '#2F86FF';
+const SELECTED_COLOR = '#FF4D4F';
 
-export function PlanCard({ plan, recent }: { plan: Plan; recent?: boolean }) {
+export function PlanCard({
+  plan,
+  recent,
+  selectable,
+  selected,
+  onToggleSelect,
+}: {
+  plan: Plan;
+  recent?: boolean;
+  /** While plans are being picked for deletion the card selects instead of opening. */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+}) {
   const router = useRouter();
 
   const handlePress = () => {
+    if (selectable) {
+      onToggleSelect?.();
+      return;
+    }
     if (plan.plan_type === PLAN_TYPES.singleWorkoutCustom) {
       router.push(`/plan/custom/${plan.id}`);
     } else {
@@ -32,11 +50,17 @@ export function PlanCard({ plan, recent }: { plan: Plan; recent?: boolean }) {
           <View style={styles.imagePlaceholder}>
             <MaterialCommunityIcons name="image-outline" size={28} color={Colors.textSecondary} />
           </View>
-          {/* Marks the plan of the most recently finished workout. */}
-          {recent && (
-            <View style={styles.recentBadge}>
-              <MaterialCommunityIcons name="clock-outline" size={20} color={RECENT_COLOR} />
+          {/* Both live in the same corner, so the checkbox takes it over while selecting. */}
+          {selectable ? (
+            <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+              {selected && <MaterialCommunityIcons name="check" size={18} color="#FFFFFF" />}
             </View>
+          ) : (
+            recent && (
+              <View style={styles.recentBadge}>
+                <MaterialCommunityIcons name="clock-outline" size={20} color={RECENT_COLOR} />
+              </View>
+            )
           )}
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>
@@ -99,6 +123,23 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
     gap: 6,
+  },
+  checkbox: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: Radii.pill,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceSunken,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    borderColor: SELECTED_COLOR,
+    backgroundColor: SELECTED_COLOR,
   },
   recentBadge: {
     position: 'absolute',
