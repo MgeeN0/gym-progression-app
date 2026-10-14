@@ -15,7 +15,6 @@
     "@react-native-community/slider": "5.2.0",
     "expo": "^57.0.21",
     "expo-constants": "~57.0.17",
-    "expo-drizzle-studio-plugin": "^0.2.1",
     "expo-font": "~57.0.3",
     "expo-glass-effect": "~57.0.3",
     "expo-haptics": "~57.0.2",
@@ -44,6 +43,7 @@
     "@types/react": "~19.2.10",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~57.0.2",
+    "expo-drizzle-studio-plugin": "^0.2.1",
     "typescript": "~6.0.3"
   },
   "private": true

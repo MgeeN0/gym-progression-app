@@ -8,13 +8,18 @@ import { ActiveWorkoutProvider } from '@/components/active-workout-provider';
 import { ActiveWorkoutTimer } from '@/components/active-workout-timer';
 import { TopBar } from '@/components/top-bar';
 import { Colors } from '@/constants/theme';
-import { migrateDbIfNeeded, seedTestDataIfNeeded } from '@/db/init';
+import { migrateDbIfNeeded } from '@/db/init';
 
 async function initializeDatabase(db: SQLiteDatabase) {
   await migrateDbIfNeeded(db);
-  await seedTestDataIfNeeded(db);
 }
 
+/**
+ * Only ever rendered in development. The plugin resolves the dev server through React
+ * Native's getDevServer, which falls back to localhost:8081 in a release build, so left
+ * mounted it would retry that connection on a real phone for minutes, or throw during
+ * render. Metro compiles __DEV__ to false and drops the branch below in production.
+ */
 function DrizzleStudioDevTools() {
   useDrizzleStudio(useSQLiteContext());
   return null;
@@ -23,7 +28,7 @@ function DrizzleStudioDevTools() {
 export default function RootLayout() {
   return (
     <SQLiteProvider databaseName="gym.db" onInit={initializeDatabase}>
-      <DrizzleStudioDevTools />
+      {__DEV__ && <DrizzleStudioDevTools />}
       <StatusBar style="light" />
       <ActiveWorkoutProvider>
         <View style={styles.root}>

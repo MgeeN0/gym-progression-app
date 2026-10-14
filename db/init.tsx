@@ -283,29 +283,6 @@ CREATE TABLE IF NOT EXISTS upgrade (
   }
 }
 
-export async function seedTestDataIfNeeded(db: SQLiteDatabase) {
-  const result = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM plan');
-  if ((result?.count ?? 0) > 0) {
-    return;
-  }
-
-  const testPlans: Omit<Plan, 'id'>[] = [
-    { plan_name: 'Push Pull Legs', plan_type: 'Push Pull Legs', days_per_plan: null, note: null },
-    { plan_name: 'Upper Body Strength', plan_type: 'Upper/Lower', days_per_plan: null, note: null },
-    { plan_name: 'Full Body Conditioning', plan_type: 'Full Body', days_per_plan: 3, note: null },
-  ];
-
-  for (const plan of testPlans) {
-    await db.runAsync(
-      'INSERT INTO plan (plan_name, plan_type, days_per_plan, note) VALUES (?, ?, ?, ?)',
-      plan.plan_name,
-      plan.plan_type,
-      plan.days_per_plan,
-      plan.note
-    );
-  }
-}
-
 export async function createPlan(db: SQLiteDatabase, plan: Omit<Plan, 'id'>) {
   await db.runAsync(
     'INSERT INTO plan (plan_name, plan_type, days_per_plan, note) VALUES (?, ?, ?, ?)',
