@@ -4,6 +4,7 @@
     "slug": "gym-progression-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "backgroundColor": "#1B1E27",
     "icon": "./assets/images/icon.png",
     "scheme": "gymprogressionapp",
     "userInterfaceStyle": "automatic",
@@ -31,9 +32,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#1B1E27",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1B1E27"
           }
         }
       ],
@@ -41,7 +42,8 @@
       "expo-font",
       "expo-image",
       "expo-web-browser",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-system-ui"
     ],
     "experiments": {
       "typedRoutes": true,
