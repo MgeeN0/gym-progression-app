@@ -283,14 +283,16 @@ CREATE TABLE IF NOT EXISTS upgrade (
   }
 }
 
+/** Returns the new plan's id, so the caller can open it. */
 export async function createPlan(db: SQLiteDatabase, plan: Omit<Plan, 'id'>) {
-  await db.runAsync(
+  const result = await db.runAsync(
     'INSERT INTO plan (plan_name, plan_type, days_per_plan, note) VALUES (?, ?, ?, ?)',
     plan.plan_name,
     plan.plan_type,
     plan.days_per_plan,
     plan.note
   );
+  return result.lastInsertRowId;
 }
 
 // While a workout is in progress it exists as one unfinished workout_history row

@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { TopBar } from '@/components/top-bar';
 import { ValidatedInput } from '@/components/validated-input';
@@ -42,19 +42,36 @@ export default function AddPlanScreen() {
   const nameValid = isValidName(planName);
   const noteValid = isValidNote(note);
   const canSave = planName.trim().length > 0 && nameValid && noteValid && selectedSplit !== null;
+  // Creating is a round trip to the database, during which the button must not fire again
+  // or a second tap would create a duplicate plan.
+  const [saving, setSaving] = useState(false);
 
   const handleCreate = useCallback(async () => {
-    if (!canSave || !selectedSplit) {
+    if (!canSave || !selectedSplit || saving) {
       return;
     }
+    setSaving(true);
 
-    await createPlan(db, {
-      plan_name: planName.trim(),
-      plan_type: selectedSplit,
-      days_per_plan: selectedSplit === PLAN_TYPES.fullBodyWorkout ? daysPerPlan : null,
-      note: note.trim().length > 0 ? note.trim() : null,
-    });
-  }, [db, canSave, planName, selectedSplit, daysPerPlan, note]);
+    try {
+      const planId = await createPlan(db, {
+        plan_name: planName.trim(),
+        plan_type: selectedSplit,
+        days_per_plan: selectedSplit === PLAN_TYPES.fullBodyWorkout ? daysPerPlan : null,
+        note: note.trim().length > 0 ? note.trim() : null,
+      });
+
+      // replace, not push: going back from the new plan belongs on the home screen
+      // rather than on a filled-in form for a plan that now exists.
+      if (selectedSplit === PLAN_TYPES.singleWorkoutCustom) {
+        router.replace(`/plan/custom/${planId}`);
+      } else {
+        router.replace(`/plan/wip/${planId}`);
+      }
+    } catch (error) {
+      setSaving(false);
+      Alert.alert('Could not create the plan', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }, [db, router, canSave, saving, planName, selectedSplit, daysPerPlan, note]);
 
   const handleGoBack = useCallback(() => {
     router.back();
@@ -65,11 +82,11 @@ export default function AddPlanScreen() {
       header: () => (
         <TopBar
           leftAction={{ icon: 'arrow-left', onPress: handleGoBack }}
-          rightAction={{ icon: 'check', onPress: handleCreate, disabled: !canSave }}
+          rightAction={{ icon: 'check', onPress: handleCreate, disabled: !canSave || saving }}
         />
       ),
     });
-  }, [navigation, handleGoBack, handleCreate, canSave]);
+  }, [navigation, handleGoBack, handleCreate, canSave, saving]);
 
   const showDaysPerPlan = useMemo(() => selectedSplit === PLAN_TYPES.fullBodyWorkout, [selectedSplit]);
 
@@ -140,15 +157,15 @@ export default function AddPlanScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <View style={[styles.createShadow, !canSave && styles.createShadowDisabled]}>
-          <Pressable disabled={!canSave} onPress={handleCreate}>
+        <View style={[styles.createShadow, (!canSave || saving) && styles.createShadowDisabled]}>
+          <Pressable disabled={!canSave || saving} onPress={handleCreate}>
             <LinearGradient
               colors={[Colors.accentStart, Colors.accentEnd]}
               start={[0, 0]}
               end={[1, 0]}
               style={styles.createButton}
             >
-              <Text style={styles.createLabel}>Create</Text>
+              <Text style={styles.createLabel}>{saving ? 'Creating...' : 'Create'}</Text>
             </LinearGradient>
           </Pressable>
         </View>
